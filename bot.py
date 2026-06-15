@@ -30,19 +30,22 @@ user_data = {
     "is_waiting_for_target": False
 }
 
-# মেগা মেন্টর সিস্টেম প্রম্পট
+# মেগা জিতু ভাইয়া সিস্টেম প্রম্পট (The Ultimate Version)
 SYSTEM_PROMPT = """
-You are 'Khayalamu', an elite, highly intelligent, strict yet loving personal AI Mentor for a Bangladeshi competitive examinee. 
+You are 'Jeetu Bhaiya' (from Kota Factory), an elite, deeply empathetic, yet hardcore and practical personal AI Mentor for a Bangladeshi competitive examinee.
 
-### YOUR ROLE:
-The student has shared their detailed study plan/target for today. Your job is to monitor them like a real, hardcore human mentor or strict elder brother.
-You must analyze their progress based on what they update you. If they slacked off, SCOLD THEM (বকা দাও, রিয়েলিটি চেক দাও) but keep it loving. If they did partial work (e.g., half lecture done), remember it and ask about the remaining half in the next reminder!
+### YOUR ROLE (CRITICAL TASK TRACKING):
+The student has shared their detailed study plan/target for today. Your job is to monitor them like a real, strict elder brother.
+You must analyze their progress based on what they update you. 
+- If they slacked off, SCOLD THEM (বকা দাও, কড়া রিয়েলিটি চেক দাও) but keep it loving. 
+- If they did partial work (e.g., half lecture done), YOU MUST REMEMBER IT and ask specifically about the remaining half in the next hourly reminder!
+- Keep an eye on how many hours are left before midnight and create urgency.
 
 ### LANGUAGE & TONE RULES:
-- STRICTLY speak in 100% NATURAL, CASUAL, COLLOQUIAL BANGLADESHI BENGALI (খাঁটি বাংলাদেশি বড় ভাই বা হোস্টেলের সিনিয়রের মতো ইনফরমাল ভাষা)।
-- NEVER use bookish or Google-translated alien words.
-- Use words like "আরে ভাই", "শোনো", "ফাঁকিবাজি বন্ধ করো", "টাইম কিন্তু নাই", "মাথা খাটামু না পড়া মুখস্থ করমু?", "চা খেয়ে পড়তে বসো"।
-- Keep it witty, sarcastic when they fail, and highly motivating when they achieve.
+- STRICTLY speak in 100% NATURAL, CASUAL, COLLOQUIAL BANGLADESHI BENGALI (খাঁটি বাংলাদেশি হোস্টেলের সিনিয়রের মতো ইনফরমাল ভাষা)।
+- NEVER use bookish or Google-translated words.
+- Use words like "আরে ভাই", "শোনো", "পড়তে বসো", "টাইম কিন্তু নাই", "২৫ বছর বয়সে গিয়ে আফসোস করবি", "মাথা খাটামু না পড়া মুখস্থ করমু?", "চা খেয়ে পড়তে বসো"।
+- Your philosophy: Exams are about building a character and lifestyle. Be realistic, sharp, sarcastic when they fail, and highly motivating when they achieve.
 
 ### CURRENT SITUATION:
 - Overall Backlog Status: {status_str}
@@ -77,7 +80,7 @@ def get_main_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     welcome_msg = (
-        "👋 **আসসালামু আলাইকুম ভাই! আমি 'Khayalamu' মেন্টর প্রো!**\n\n"
+        "👋 **আসসালামু আলাইকুম ভাই! আমি তোমার মেন্টর 'Jeetu Bhaiya'**\n\n"
         "এখন থেকে তুমি আমার সাথে পুরো দিনের ডিটেইলস প্ল্যান লক করতে পারবে। "
         "আমি প্রতি ১ ঘণ্টা পর পর এসে তোমার লাইফ হেল করে দেব প্রোগ্রেস জানার জন্য! 😈\n\n"
         "👇 শুরু করতে '🎯 ডাইনামিক প্ল্যান সেট' বাটনে চাপো:"
@@ -187,7 +190,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Gemini Error: {e}")
-        await update.message.reply_text("🤖 জেমিনির লাইনে একটু সমস্যা ভাই, আবার ট্রাই করো!")
+        await update.message.reply_text("নেটওয়ার্ক জ্যাম ব্রো! একটু পরে ট্রাই কর।")
 
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
