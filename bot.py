@@ -174,7 +174,7 @@ async def process_dynamic_add(update: Update, text: str):
         save_syllabus_item(key, {"class": "Pending", "note": "Pending", "practice": "Pending", "exam": "Pending"})
         
     user_data["current_state"] = "MAIN_MENU"
-    await update.message.reply_text(f"✅ সাবাশ! সিলেবাসে {len(lectures)}টি লেکচার যোগ করে নিয়েছি। পড়তে বসে যাও!", reply_markup=get_main_keyboard())
+    await update.message.reply_text(f"✅ সাবাশ! সিলেবাসে {len(lectures)}টি লেকচার যোগ করে নিয়েছি। পড়তে বসে যাও!", reply_markup=get_main_keyboard())
 
 async def process_dynamic_done(update: Update, text: str, task_type: str):
     tokens = extract_tokens(text)
@@ -273,12 +273,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     user_text = update.message.text.strip()
 
-    # 🚨 ট্রিপল-লেয়ার সেফটি চেক ফর স্টপ প্ল্যান
+    # ১. স্টপ প্ল্যানের জন্য আল্ট্রা-সেফটি রুট
     if 'stop_plan' in user_text or '/stop_plan' in user_text:
         return await stop_plan_engine(update, context)
 
-    # 1. প্রধান মেনু ইন্টারসেপ্টরস
-    if user_text == '📊  স্ট্যাটাস চেক':
+    # ২. প্রধান মেনু বাটন ম্যাচিং (স্পেস-সেফ ফ্রেন্ডলি রিজেক্স/ইন-মেথড)
+    if 'স্ট্যাটাস চেক' in user_text or '/status' in user_text:
         _, _, _, total, pending, complete = process_ai_insights()
         status_msg = (
             f"📝 **বর্তমান অবস্থা:**\n\n"
@@ -291,78 +291,75 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return await update.message.reply_text(status_msg, parse_mode="Markdown")
 
-    if user_text == '🎯 প্ল্যান সেট করো':
+    if 'প্ল্যান সেট করো' in user_text or '/plan' in user_text:
         user_data["current_state"] = "WAITING_FOR_TARGET"
         return await update.message.reply_text("📝 **আজকে রাত ১২টার মধ্যে কোন কোন লেকচার ওড়াতে চাও ভাই? ডিটেইলসে টাইপ করে পাঠাও:**")
 
-    if user_text == '📋 প্রোগ্রেস রিপোর্ট':
-        return await view_syllabus_smart(update)
+    if 'প্রোগ্রেস রিপোর্ট' in user_text or user_text.startswith('/report') or user_text.startswith('/view'):
+        parts = user_text.split(" ")
+        f_arg = parts[1] if len(parts) > 1 and not parts[0].startswith('📋') else ""
+        return await view_syllabus_smart(update, f_arg)
 
-    if user_text == '🛠️ সিলেবাস管理器' or user_text == '🛠️ সিলেবাস ম্যানেজার':
+    if 'সিলেবাস ম্যানেজার' in user_text:
         return await update.message.reply_text("🛠️ **সিলেবাস কন্ট্রোল প্যানেল অন করা হয়েছে ভাই:**", reply_markup=get_syllabus_keyboard())
 
-    if user_text == '🔙 মেইন মেনু':
+    if 'মেইন মেনু' in user_text:
         user_data["current_state"] = "MAIN_MENU"
         return await update.message.reply_text("🔙 প্রধান মেনুতে ফিরে আসা হয়েছে ভাই।", reply_markup=get_main_keyboard())
 
-    # 2. সিলেবাস সাব-মেনু সিলেকশনস (স্টেট চেঞ্জার)
-    if user_text == '➕ নতুন লেকচার অ্যাড':
+    # ৩. সিলেবাস সাব-মেনু সিলেকশনস (স্টেট চেঞ্জার)
+    if 'নতুন লেকচার অ্যাড' in user_text:
         user_data["current_state"] = "WAITING_FOR_ADD"
         return await update.message.reply_text("✍️ কোন চ্যাপ্টার অ্যাড করতে চাও ভাই? এভাবে কোড পাঠাও:\n`P1 C1 L1-3` (বা `Math Ch2 L1`)")
 
-    if user_text == '📺 CLASS ডান করো':
+    if 'CLASS ডান করো' in user_text:
         user_data["current_state"] = "WAITING_FOR_CLASS"
         return await update.message.reply_text("📺 কোন লেকচারের ক্লাস শেষ করলি ভাই? কোড দে: (e.g. `P1 C1 L1`)")
 
-    if user_text == '📝 NOTE ডান করো':
+    if 'NOTE ডান করো' in user_text:
         user_data["current_state"] = "WAITING_FOR_NOTE"
         return await update.message.reply_text("📝 কোন লেকচারের নোট রিভিশন ডান ভাই? কোড দে: (e.g. `P1 C1 L1`)")
 
-    if user_text == '🎯 PRACTICE ডান করো':
+    if 'PRACTICE ডান করো' in user_text:
         user_data["current_state"] = "WAITING_FOR_PRACTICE"
         return await update.message.reply_text("🎯 কোন লেকচারের প্র্যাকটিস কোয়েশ্চেন ওড়ালি? কোড দে: (e.g. `P1 C1 L1`)")
 
-    if user_text == '🏆 EXAM ডান করো':
+    if 'EXAM ডান করো' in user_text:
         user_data["current_state"] = "WAITING_FOR_EXAM"
         return await update.message.reply_text("🏆 কোন লেকচারের এক্সাম ডান করলি ভাই? কোড দে: (e.g. `P1 C1 L1`)")
 
-    # 3. স্টেট মেশিন ডেটা প্রসেসরস
+    # ⚠️ ৪. স্টেট মেশিন ডাটা প্রসেসিং (যদি ইউজার কোনো ডাটা ইনপুট মোডে থাকে)
     state = user_data["current_state"]
     
-    if state == "WAITING_FOR_TARGET":
-        user_data["daily_target_raw"] = user_text
-        user_data["current_state"] = "MAIN_MENU"
-        
-        current_jobs = context.job_queue.get_jobs_by_name("hourly_tracker")
-        for job in current_jobs: job.schedule_removal()
-        context.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
-        save_target_to_sheet(user_text)
-        
-        stats_str, recent_pending, recap_item = process_ai_insights()
-        bd_time = get_bd_time().strftime("%I:%M %p")
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"I have set my target to: {user_text}",
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=stats_str, daily_target_raw=user_data["daily_target_raw"], recent_pending=recent_pending, recap_item=recap_item),
-                temperature=0.7,
-            ),
-        )
-        return await update.message.reply_text(response.text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    if state != "MAIN_MENU":
+        if state == "WAITING_FOR_TARGET":
+            user_data["daily_target_raw"] = user_text
+            user_data["current_state"] = "MAIN_MENU"
+            
+            current_jobs = context.job_queue.get_jobs_by_name("hourly_tracker")
+            for job in current_jobs: job.schedule_removal()
+            context.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
+            save_target_to_sheet(user_text)
+            
+            stats_str, recent_pending, recap_item = process_ai_insights()
+            bd_time = get_bd_time().strftime("%I:%M %p")
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=f"I have set my target to: {user_text}",
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=stats_str, daily_target_raw=user_data["daily_target_raw"], recent_pending=recent_pending, recap_item=recap_item),
+                    temperature=0.7,
+                ),
+            )
+            return await update.message.reply_text(response.text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-    if state == "WAITING_FOR_ADD": return await process_dynamic_add(update, user_text)
-    if state == "WAITING_FOR_CLASS": return await process_dynamic_done(update, user_text, "class")
-    if state == "WAITING_FOR_NOTE": return await process_dynamic_done(update, user_text, "note")
-    if state == "WAITING_FOR_PRACTICE": return await process_dynamic_done(update, user_text, "practice")
-    if state == "WAITING_FOR_EXAM": return await process_dynamic_done(update, user_text, "exam")
+        if state == "WAITING_FOR_ADD": return await process_dynamic_add(update, user_text)
+        if state == "WAITING_FOR_CLASS": return await process_dynamic_done(update, user_text, "class")
+        if state == "WAITING_FOR_NOTE": return await process_dynamic_done(update, user_text, "note")
+        if state == "WAITING_FOR_PRACTICE": return await process_dynamic_done(update, user_text, "practice")
+        if state == "WAITING_FOR_EXAM": return await process_dynamic_done(update, user_text, "exam")
 
-    # 4. স্ল্যাশ কমান্ড ম্যানুয়াল ফিল্টার হ্যান্ডলিং (যেমন: /report p1)
-    if user_text.startswith('/report') or user_text.startswith('/view'):
-        parts = user_text.split(" ")
-        f_arg = parts[1] if len(parts) > 1 else ""
-        return await view_syllabus_smart(update, f_arg)
-
-    # 5. সাধারণ চ্যাট মোড উইথ জিতু ভাইয়া
+    # 🚀 ৫. একদম ফ্রি এবং ওপেন চ্যাট মেকানিজম উইথ জিতু ভাইয়া (কখনোই লক হবে না)
     stats_str, recent_pending, recap_item = process_ai_insights()
     bd_time = get_bd_time().strftime("%I:%M %p")
     try:
@@ -388,7 +385,7 @@ def main():
     app.add_handler(CommandHandler("stop_plan", stop_plan_engine))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Jeetu Bhaiya Smart State Machine Bot is running live...")
+    print("Jeetu Bhaiya Pure Dynamic Core is running live...")
     app.run_polling()
 
 if __name__ == '__main__':
