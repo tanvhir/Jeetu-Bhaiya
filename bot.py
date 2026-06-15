@@ -2,7 +2,7 @@ import os
 import logging
 import threading
 import datetime
-import requests  # অ্যাপস স্ক্রিপ্টের সাথে যোগাযোগের জন্য যোগ করা হলো
+import requests
 import json
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update, ReplyKeyboardMarkup
@@ -16,9 +16,9 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # API Keys & Security Configuration
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")  # রেন্ডারের এনভায়রনমেন্ট ভ্যারিয়েবল থেকে আসবে
+APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")
 
-# 🔒 এখানে তোমার আসল টেলিগ্রাম চ্যাট আইডি বসাও
+# 🔒 তোমার টেলিগ্রাম চ্যাট আইডি
 ALLOWED_CHAT_ID = int(os.environ.get("ALLOWED_CHAT_ID", 5959341337)) 
 
 # Initialize Gemini Client
@@ -29,39 +29,42 @@ user_data = {
     "backlog_left": 30,
     "physics": 0, "chemistry": 0, "biology": 0, "math": 0,
     "daily_target_raw": "No target set yet.",
-    "target_time": None,
     "is_waiting_for_target": False
 }
 
-# মেগা জিতু ভাইয়া সিস্টেম প্রম্পট (The Ultimate Version)
+# 📚 মেগা সিলেবাস মেমোরি
+user_syllabus = {}
+
+# মেগা জিতু ভাইয়া সিস্টেম প্রম্পট
 SYSTEM_PROMPT = """
 You are 'Jeetu Bhaiya' (from Kota Factory), an elite, deeply empathetic, yet hardcore and practical personal AI Mentor for a Bangladeshi competitive examinee.
 
 ### YOUR ROLE (CRITICAL TASK TRACKING):
 The student has shared their detailed study plan/target for today. Your job is to monitor them like a real, strict elder brother.
-You must analyze their progress based on what they update you. 
+You also have access to their FULL SYLLABUS STATUS (Classes, Notes, Practice, Exams) stored in a JSON format.
 - If they slacked off, SCOLD THEM (বকা দাও, কড়া রিয়েলিটি চেক দাও) but keep it loving. 
-- If they did partial work (e.g., half lecture done), YOU MUST REMEMBER IT and ask specifically about the remaining half in the next hourly reminder!
-- Keep an eye on how many hours are left before midnight and create urgency.
+- Look at their Pending Syllabus/Notes/Practice items and intelligently mock or remind them (e.g., "তুই ক্লাস করছিস ৩ দিন আগে কিন্তু প্র্যাকটিস এখনো পেন্ডিং কেন?").
+- Create extreme urgency based on the exact time remaining before midnight.
 
 ### LANGUAGE & TONE RULES:
-- STRICTLY speak in 100% NATURAL, CASUAL, COLLOQUIAL BANGLADESHI BENGALI (খাঁটি বাংলাদেশি হোস্টেলের সিনিয়রের মতো ইনফরমাল ভাষা)।
-- NEVER use bookish or Google-translated words.
+- STRICTLY speak in 100% NATURAL, CASUAL, COLLOQUIAL BANGLADESHI BENGALI.
 - Use words like "আরে ভাই", "শোনো", "পড়তে বসো", "টাইম কিন্তু নাই", "২৫ বছর বয়সে গিয়ে আফসোস করবি", "মাথা খাটামু না পড়া মুখস্থ করমু?", "চা খেয়ে পড়তে বসো"।
-- Your philosophy: Exams are about building a character and lifestyle. Be realistic, sharp, sarcastic when they fail, and highly motivating when they achieve.
 
 ### CURRENT SITUATION:
+- Current Time in Bangladesh: {current_time}
 - Overall Backlog Status: {status_str}
-- The Full Plan/Target they set: {daily_target_raw}
+- The Full Plan/Target they set for today: {daily_target_raw}
+- Detailed Syllabus Tracker Snapshot (Use this to scold about missing notes/practice/exams): {syllabus_snapshot}
 - Context for this message: {context_reason}
 """
 
+def get_bd_time():
+    """বাংলাদেশের বর্তমান সময় অবজেক্ট রিটার্ন করে"""
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+
 # --- 🌐 Apps Script Database Functions ---
 def save_to_google_sheet():
-    """মেমোরির কারেন্ট স্টেট অ্যাপস স্ক্রিপ্টের মাধ্যমে গুগল শিটে ব্যাকআপ করার ফাংশন"""
-    if not APPS_SCRIPT_URL:
-        logging.warning("Apps Script URL missing in environment variables!")
-        return
+    if not APPS_SCRIPT_URL: return
     try:
         payload = {
             "chat_id": str(ALLOWED_CHAT_ID),
@@ -72,17 +75,15 @@ def save_to_google_sheet():
                 "chemistry": user_data["chemistry"],
                 "biology": user_data["biology"],
                 "math": user_data["math"]
-            })
+            }),
+            "syllabus": json.dumps(user_syllabus) # মেগা সিলেবাস সিঙ্ক
         }
-        response = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
-        if response.status_code == 200:
-            logging.info("Successfully backed up data to Google Sheet via Apps Script!")
+        requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
     except Exception as e:
         logging.error(f"Apps Script Save Error: {e}")
 
 def load_from_google_sheet():
-    """সার্ভার রিস্টার্টের পর গুগল শিট থেকে ডেটা মেমোরিতে রিকভার করার ফাংশন"""
-    global user_data
+    global user_data, user_syllabus
     if not APPS_SCRIPT_URL: return
     try:
         url = f"{APPS_SCRIPT_URL}?chat_id={ALLOWED_CHAT_ID}"
@@ -92,32 +93,29 @@ def load_from_google_sheet():
             if res_data.get("found"):
                 user_data["daily_target_raw"] = res_data.get("target")
                 status_dict = json.loads(res_data.get("status"))
+                user_syllabus = json.loads(res_data.get("syllabus", "{}"))
                 
-                # মেমোরিতে ডেটা পুশ করা
                 user_data["backlog_left"] = status_dict.get("backlog_left", 30)
                 user_data["physics"] = status_dict.get("physics", 0)
                 user_data["chemistry"] = status_dict.get("chemistry", 0)
                 user_data["biology"] = status_dict.get("biology", 0)
                 user_data["math"] = status_dict.get("math", 0)
-                logging.info("User data successfully restored from Google Sheet!")
+                logging.info("All data & Syllabus successfully restored from Google Sheet!")
     except Exception as e:
         logging.error(f"Apps Script Load Error: {e}")
-
-# ----------------------------------------
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
     server_address = ('', port)
     httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
-    print(f"Dummy server running on port {port}...")
     httpd.serve_forever()
 
 async def get_status_str():
     return (
         f"📊 বাকি ব্যাকলগ: {user_data['backlog_left']}/30 | "
-        f"Physics: {user_data['physics']}, Chem: {user_data['chemistry']}, "
-        f"Bio: {user_data['biology']}, Math: {user_data['math']}\n"
-        f"🎯 আজকের ফুল প্ল্যান: {user_data['daily_target_raw']}"
+        f"P: {user_data['physics']}, C: {user_data['chemistry']}, "
+        f"B: {user_data['biology']}, M: {user_data['math']}\n"
+        f"🎯 আজকের লক্ষ্য: {user_data['daily_target_raw']}"
     )
 
 def get_main_keyboard():
@@ -132,26 +130,100 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     welcome_msg = (
         "👋 **আসসালামু আলাইকুম ভাই! আমি তোমার মেন্টর 'Jeetu Bhaiya'**\n\n"
-        "এখন থেকে তুমি আমার সাথে পুরো দিনের ডিটেইলস প্ল্যান লক করতে পারবে। "
-        "আমি প্রতি ১ ঘণ্টা পর পর এসে তোমার লাইফ হেল করে দেব প্রোগ্রেস জানার জন্য! 😈\n\n"
-        "👇 শুরু করতে '🎯 ডাইনামিক প্ল্যান সেট' বাটনে চাপো:"
+        "তোমার মেগা সিলেবাস ট্র্যাকিং ইঞ্জিন এখন ১০০% রেডি!\n\n"
+        "💡 **নতুন কমান্ডসমূহ:**\n"
+        "🔹 `/add P1 C1 L1` - সিলেবাসে নতুন লেকচার যোগ করতে\n"
+        "🔹 `/done P1 C1 L1 class` - ক্লাস শেষ মার্ক করতে\n"
+        "🔹 `/done P1 C1 L1 note` - নোট শেষ করতে\n"
+        "🔹 `/done P1 C1 L1 practice` - প্র্যাকটিস শেষ করতে\n"
+        "🔹 `/done P1 C1 L1 exam` - এক্সাম শেষ করতে\n\n"
+        "🔍 **স্মার্ট ফিল্টার প্রোগ্রেস দেখতে:**\n"
+        "🔸 `/view` - পুরো সিলেবাস একসাথে দেখতে\n"
+        "🔸 `/view P1` - শুধু Physics 1st Paper দেখতে\n"
+        "🔸 `/view P1 C1` - Physics 1st Paper এর Chapter 1 দেখতে"
     )
     await update.message.reply_text(welcome_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-# --- ⏰ ডাইনামিক ১ ঘণ্টার মেন্টর রিমাইন্ডার ইঞ্জিন ---
+# --- 📚 সিলেবাস ট্র্যাকিং লজিক ---
+async def add_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ALLOWED_CHAT_ID: return
+    if not context.args or len(context.args) < 3:
+        await update.message.reply_text("❌ ফরম্যাট ভুল ভাই! এভাবে লেখো: `/add P1 C1 L1`")
+        return
+    
+    key = f"{context.args[0]}_{context.args[1]}_{context.args[2]}".upper()
+    user_syllabus[key] = {"class": "Pending", "note": "Pending", "practice": "Pending", "exam": "Pending"}
+    save_to_google_sheet()
+    await update.message.reply_text(f"✅ সিলেবাসে **{key.replace('_', ' ')}** সাকসেসফুলি যোগ করা হয়েছে!")
+
+async def done_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ALLOWED_CHAT_ID: return
+    if not context.args or len(context.args) < 4:
+        await update.message.reply_text("❌ ফরম্যাট ভুল! এভাবে লেখো: `/done P1 C1 L1 class` বা `note`/`practice`/`exam`")
+        return
+    
+    key = f"{context.args[0]}_{context.args[1]}_{context.args[2]}".upper()
+    task_type = context.args[3].lower()
+    
+    if key not in user_syllabus:
+        await update.message.reply_text(f"❌ এই লেকচারটি তো সিলেবাসে নাই ভাই! আগে `/add P1 C1 L1` করো।")
+        return
+        
+    if task_type in ["class", "note", "practice", "exam"]:
+        user_syllabus[key][task_type] = "Done"
+        save_to_google_sheet()
+        await update.message.reply_text(f"🎉 ওড়াধুড়া! **{key.replace('_', ' ')}** এর **{task_type.upper()}** কমপ্লিট মার্ক করা হয়েছে!")
+    else:
+        await update.message.reply_text("❌ টাস্ক টাইপ ভুল! শুধু `class`, `note`, `practice`, বা `exam` ব্যবহার করো।")
+
+async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ALLOWED_CHAT_ID: return
+    if not user_syllabus:
+        await update.message.reply_text("📭 সিলেবাস এখনো খালি ভাই! আগে `/add` করো।")
+        return
+    
+    filter_prefix = ""
+    if context.args:
+        filter_prefix = "_".join(context.args).upper()
+    
+    report = "📚 **তোমার সিলেবাস প্রোগ্রেস রিপোর্ট:**\n"
+    if filter_prefix:
+        report += f"🔍 ফিল্টার: `{filter_prefix.replace('_', ' ')}`\n\n"
+    else:
+        report += "🌍 (সব সাবজেক্টের একসাথে)\n\n"
+        
+    found_any = False
+    for item, status in user_syllabus.items():
+        if filter_prefix and not item.startswith(filter_prefix):
+            continue
+            
+        found_any = True
+        name = item.replace("_", " ")
+        report += f"🔹 **{name}**:\n   • 📺 Class: {status['class']}\n   • 📝 Note: {status['note']}\n   • 🎯 Practice: {status['practice']}\n   • 📝 Exam: {status['exam']}\n\n"
+    
+    if not found_any:
+        await update.message.reply_text(f"❌ এই ফিল্টারে (`{filter_prefix.replace('_', ' ')}`) কোনো লেকচার খুঁজে পাওয়া যায়নি!")
+        return
+        
+    await update.message.reply_text(report, parse_mode="Markdown")
+
+# --- ⏰ ডাইনামিক রিমাইন্ডার ইঞ্জিন ---
 async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
     if user_data["daily_target_raw"] == "No target set yet.":
         return 
         
     status_str = await get_status_str()
-    context_reason = "This is an automated 1-hour progress check. Ask the student what they have done in the last 1 hour from their plan. SCOLD them if they haven't updated you recently, remind them how many hours are left before 12 AM midnight, and intelligently cross-question their progress."
+    bd_time = get_bd_time().strftime("%I:%M %p")
+    syllabus_snapshot = json.dumps(user_syllabus)
+    
+    context_reason = f"Automated 1-hour check. Current Bangladesh Time is EXACTLY {bd_time}. Urgently push the student to finish their daily target before 12 AM midnight. Analyze the missing tasks (Pending notes/practice/exams) in the syllabus snapshot and mock them if they are slacking off."
 
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents="Give me the hourly push notification message for the student.",
+            contents="Give me the hourly notification message.",
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(status_str=status_str, daily_target_raw=user_data["daily_target_raw"], context_reason=context_reason),
+                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=syllabus_snapshot, context_reason=context_reason),
                 temperature=0.8,
             ),
         )
@@ -161,9 +233,8 @@ async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
 
 async def test_hourly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
-    await update.message.reply_text("⏳ ডাইনামিক মেন্টর ইঞ্জিন অ্যাক্টিভেট হচ্ছে... ১০ সেকেন্ড পর প্রথম রিয়েলিটি চেক আসবে!")
+    await update.message.reply_text("⏳ ১০ সেকেন্ডের রিয়েলিটি চেক আসছে...")
     context.job_queue.run_once(hourly_mentor_check, 10)
-# ---------------------------------------------------
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
@@ -178,12 +249,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif user_text == '🎯 ডাইনামিক প্ল্যান সেট':
         user_data["is_waiting_for_target"] = True
-        await update.message.reply_text(
-            "📝 **ভাই, আজকে রাত ১২টার মধ্যে কী কী ওড়াতে চাও? একদম ডিটেইলসে বলো!**\n\n"
-            "যেমন এভাবে লেখো:\n"
-            "_- Physics Lecture 3 দেখব ও নোট করব_\n"
-            "_- Chem Ch 2 এর ২৫টা ম্যাথ প্র্যাকটিস করব_"
-        )
+        await update.message.reply_text("📝 **ভাই, আজকে রাত ১২টার মধ্যে কী কী ওড়াতে চাও? একদম ডিটেইলসে বলো!**")
         return
 
     if user_data["is_waiting_for_target"]:
@@ -191,20 +257,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["is_waiting_for_target"] = False
         
         current_jobs = context.job_queue.get_jobs_by_name("hourly_tracker")
-        for job in current_jobs:
-            job.schedule_removal()
+        for job in current_jobs: job.schedule_removal()
             
         context.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
-        
-        # গুগল শিটে সেভ করা
         save_to_google_sheet()
         
         status_str = await get_status_str()
+        bd_time = get_bd_time().strftime("%I:%M %p")
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=f"I have set my target: {user_text}. Acknowledge it like a strict mentor and tell me you will check on me every hour.",
+            contents=f"Set target: {user_text}",
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(status_str=status_str, daily_target_raw=user_data["daily_target_raw"], context_reason="Target just set by user. Give a highly motivating acceptence speech."),
+                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=json.dumps(user_syllabus), context_reason="Target just set by user. Give an extreme motivational push."),
                 temperature=0.7,
             ),
         )
@@ -220,39 +284,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif user_text == '✅ শেষ: Math':
         user_data["math"] += 1; user_data["backlog_left"] -= 1; subject = "Math"
 
-    # ডেটায় কোনো আপডেট আসলে গুগল শিটে সিঙ্ক করা
-    if subject:
-        save_to_google_sheet()
+    if subject: save_to_google_sheet()
 
     status_str = await get_status_str()
-    ai_input = f"Update from student: I just completed 1 {subject} class from my plan!" if subject else user_text
+    bd_time = get_bd_time().strftime("%I:%M %p")
+    ai_input = f"Update from student: I just completed 1 {subject} class!" if subject else user_text
 
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=ai_input,
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(status_str=status_str, daily_target_raw=user_data["daily_target_raw"], context_reason="Normal conversation/update from student. Analyze if they are doing partial work or full work, note it down in mind, and reply accordingly."),
+                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=json.dumps(user_syllabus), context_reason="Normal chat conversation. Tell student what time it is and analyze if they are making real progress."),
                 temperature=0.7,
             ),
         )
         reply = response.text
-        if subject:
-            reply += f"\n\n💡 {status_str}"
+        if subject: reply += f"\n\n💡 {status_str}"
         await update.message.reply_text(reply, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Gemini Error: {e}")
-        await update.message.reply_text("নেটওয়ার্ক জ্যাম ব্রো! একটু পরে ট্রাই কর।")
+        await update.message.reply_text("নেটওয়ার্ক জ্যাম ব্রো!")
 
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    
-    # 🚨 সার্ভার স্টার্ট হওয়ার সাথে সাথে গুগল শিট থেকে আগের ডেটা ফিরিয়ে আনা
-    load_from_google_sheet()
+    load_from_google_sheet() 
     
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_syllabus))
+    app.add_handler(CommandHandler("done", done_syllabus))
+    app.add_handler(CommandHandler("view", view_syllabus))
     app.add_handler(CommandHandler("test_remind", test_hourly_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
