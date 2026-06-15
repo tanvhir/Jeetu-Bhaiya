@@ -277,7 +277,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'stop_plan' in user_text or '/stop_plan' in user_text:
         return await stop_plan_engine(update, context)
 
-    # ২. প্রধান মেনু বাটন ম্যাচিং (স্পেস-সেফ ফ্রেন্ডলি রিজেক্স/ইন-মেথড)
+    # ২. প্রধান মেনু বাটন ম্যাচিং (ফ্লেক্সিবল ইন-টেক্সট চেক)
     if 'স্ট্যাটাস চেক' in user_text or '/status' in user_text:
         _, _, _, total, pending, complete = process_ai_insights()
         status_msg = (
@@ -328,38 +328,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["current_state"] = "WAITING_FOR_EXAM"
         return await update.message.reply_text("🏆 কোন লেকচারের এক্সাম ডান করলি ভাই? কোড দে: (e.g. `P1 C1 L1`)")
 
-    # ⚠️ ৪. স্টেট মেশিন ডাটা প্রসেসিং (যদি ইউজার কোনো ডাটা ইনপুট মোডে থাকে)
+    # ⚠️ ৪. ইনপুট মোড ইন্টারসেপ্টর (যদি ইউজার কোনো নির্দিষ্ট ডাটা টাইপ করার মোডে থাকে)
     state = user_data["current_state"]
     
-    if state != "MAIN_MENU":
-        if state == "WAITING_FOR_TARGET":
-            user_data["daily_target_raw"] = user_text
-            user_data["current_state"] = "MAIN_MENU"
-            
-            current_jobs = context.job_queue.get_jobs_by_name("hourly_tracker")
-            for job in current_jobs: job.schedule_removal()
-            context.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
-            save_target_to_sheet(user_text)
-            
-            stats_str, recent_pending, recap_item = process_ai_insights()
-            bd_time = get_bd_time().strftime("%I:%M %p")
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=f"I have set my target to: {user_text}",
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=stats_str, daily_target_raw=user_data["daily_target_raw"], recent_pending=recent_pending, recap_item=recap_item),
-                    temperature=0.7,
-                ),
-            )
-            return await update.message.reply_text(response.text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    if state == "WAITING_FOR_TARGET":
+        user_data["daily_target_raw"] = user_text
+        user_data["current_state"] = "MAIN_MENU"
+        
+        current_jobs = context.job_queue.get_jobs_by_name("hourly_tracker")
+        for job in current_jobs: job.schedule_removal()
+        context.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
+        save_target_to_sheet(user_text)
+        
+        stats_str, recent_pending, recap_item = process_ai_insights()
+        bd_time = get_bd_time().strftime("%I:%M %p")
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=f"I have set my target to: {user_text}",
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=stats_str, daily_target_raw=user_data["daily_target_raw"], recent_pending=recent_pending, recap_item=recap_item),
+                temperature=0.7,
+            ),
+        )
+        return await update.message.reply_text(response.text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-        if state == "WAITING_FOR_ADD": return await process_dynamic_add(update, user_text)
-        if state == "WAITING_FOR_CLASS": return await process_dynamic_done(update, user_text, "class")
-        if state == "WAITING_FOR_NOTE": return await process_dynamic_done(update, user_text, "note")
-        if state == "WAITING_FOR_PRACTICE": return await process_dynamic_done(update, user_text, "practice")
-        if state == "WAITING_FOR_EXAM": return await process_dynamic_done(update, user_text, "exam")
+    elif state == "WAITING_FOR_ADD": return await process_dynamic_add(update, user_text)
+    elif state == "WAITING_FOR_CLASS": return await process_dynamic_done(update, user_text, "class")
+    elif state == "WAITING_FOR_NOTE": return await process_dynamic_done(update, user_text, "note")
+    elif state == "WAITING_FOR_PRACTICE": return await process_dynamic_done(update, user_text, "practice")
+    elif state == "WAITING_FOR_EXAM": return await process_dynamic_done(update, user_text, "exam")
 
-    # 🚀 ৫. একদম ফ্রি এবং ওপেন চ্যাট মেকানিজম উইথ জিতু ভাইয়া (কখনোই লক হবে না)
+    # 🚀 ৫. একদম ফ্রি এবং ওপেন চ্যাট রুট (ইউজার MAIN_MENU তে থাকলেই এটি সচল হবে)
     stats_str, recent_pending, recap_item = process_ai_insights()
     bd_time = get_bd_time().strftime("%I:%M %p")
     try:
@@ -385,7 +384,7 @@ def main():
     app.add_handler(CommandHandler("stop_plan", stop_plan_engine))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Jeetu Bhaiya Pure Dynamic Core is running live...")
+    print("Jeetu Bhaiya AI + Button Dual Engine is live...")
     app.run_polling()
 
 if __name__ == '__main__':
