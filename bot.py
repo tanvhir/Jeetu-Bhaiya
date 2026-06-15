@@ -13,7 +13,9 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # API Keys & Security Configuration
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-ALLOWED_CHAT_ID = int(os.environ.get("ALLOWED_CHAT_ID", 5959341337)) # <--- এখানে তোমার ID বসাবে
+
+# 🔒 এখানে ১২৩৪৫৬৭৮৯ কেটে তোমার নিজের চ্যাট আইডি বসাও (তাহলে আর লক দেখাবে না)
+ALLOWED_CHAT_ID = int(os.environ.get("ALLOWED_CHAT_ID", 123456789)) 
 
 # Initialize Groq Client
 groq_client = Groq(api_key=GROQ_API_KEY)
@@ -28,16 +30,16 @@ user_data = {
     "daily_target": "No target set yet for today."
 }
 
-# উন্নত প্রম্পট ও নিখুঁত চ্যাট এক্সাম্পল (Few-Shot Prompting)
+# পারফেক্ট খাঁটি বাংলা প্রম্পট ও চ্যাট এক্সাম্পল
 SYSTEM_PROMPT = """
-You are 'Khayalamu', an elite, elder-sibling-like personal AI Mentor for a Bangladeshi student preparing for competitive exams. 
+You are 'Khayalamu', an elite personal AI Mentor for a Bangladeshi student preparing for competitive exams. 
 
 Current Stats of the student:
 {status_str}
 
 ### LANGUAGE & TONE RULES:
 - STRICTLY SPEAK IN 100% NATURAL, CASUAL, COLLOQUIAL BANGLADESHI BENGALI (খাঁটি বাংলা ভাষা ও ফন্ট)।
-- NEVER mix Hindi/Urdu words. Never use Google-translated alien words like "আহাইন্ন", "আওআমায়ের", "বাকশো", "ছুটি নিই না"।
+- NEVER mix Hindi/Urdu words. Never use Google-translated words like "আহাইন্ন", "আওআমায়ের", "শিক্ষা সর্বোচ্চ আছে"।
 - Speak exactly like a real Bangladeshi elder brother or close mentor guiding a younger brother. Use terms like "আরে ভাই", "শোনো", "পড়তে বসো", "ফাঁকিবাজি বন্ধ করো", "চিল করো"।
 
 ### FEW-SHOT EXAMPLES (How you must reply):
@@ -99,16 +101,19 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
         f"ফাঁকিবাজি না করে দ্রুত পড়া শেষ করো! কোনো ক্লাস শেষ হলে নিচের বাটন চেপে আপডেট জানিয়ে দাও।\n\n"
         f"{status_str}"
     )
-    await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=reminder_msg, parse_mode="Markdown")
+    try:
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=reminder_msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Reminder send failed: {e}")
 
 async def test_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     await update.message.reply_text("⏳ রিমাইন্ডার ইঞ্জিন টেস্ট করা হচ্ছে... ঠিক ১০ সেকেন্ড পর বোট নিজে থেকে নোটিফিকেশন পাঠাবে।")
-    # ১০ সেকেন্ডের জন্য টাস্ক কিউতে রান করা
     context.job_queue.run_once(send_reminder, 10)
 # ----------------------
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Security Lock Check
     if update.effective_chat.id != ALLOWED_CHAT_ID:
         await update.message.reply_text("❌ এই বোটটি লক করা আছে।")
         return
@@ -157,7 +162,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {"role": "system", "content": SYSTEM_PROMPT.format(status_str=status_str)},
                 {"role": "user", "content": ai_input}
             ],
-            model="qwen/qwen3-32b", # স্ক্রিনশট অনুযায়ী বাংলা ভাষার জন্য বেস্ট এভেইলেবল মডেল সেট করা হলো
+            model="qwen-2.5-32b", # <--- Groq-এর অফিশিয়াল সঠিক Qwen মডেল আইডি সেট করা হলো
         )
         reply = chat_completion.choices[0].message.content
         if subject:
@@ -173,18 +178,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
     
-    # 🔒 রিমাইন্ডার জিম কিউ (JobQueue) পারফেক্টলি ইনিশিয়ালাইজ করার সঠিক আর্কিটেকচার
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # ডেইলি রিমাইন্ডার শিডিউল (দুপুর ৩টা ও রাত ৯টা বাংলাদেশ সময়)
-    app.job_queue.run_daily(send_reminder, time=datetime.time(hour=9, minute=0))   # 3:00 PM BD Time
-    app.job_queue.run_daily(send_reminder, time=datetime.time(hour=15, minute=0)) # 9:00 PM BD Time
+    # রিমাইন্ডার শিডিউল
+    app.job_queue.run_daily(send_reminder, time=datetime.time(hour=9, minute=0))   # 3:00 PM BD
+    app.job_queue.run_daily(send_reminder, time=datetime.time(hour=15, minute=0)) # 9:00 PM BD
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("test_remind", test_reminder_command)) 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot is running with Fixed Reminder Engine...")
+    print("Bot is running with Fixed Qwen Engine...")
     app.run_polling()
 
 if __name__ == '__main__':
