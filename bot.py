@@ -4,6 +4,7 @@ import threading
 import datetime
 import requests
 import json
+import re
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -24,7 +25,7 @@ ALLOWED_CHAT_ID = int(os.environ.get("ALLOWED_CHAT_ID", 5959341337))
 # Initialize Gemini Client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Advanced State Management (Memory)
+# Advanced State Management
 user_data = {
     "backlog_left": 30,
     "physics": 0, "chemistry": 0, "biology": 0, "math": 0,
@@ -35,13 +36,12 @@ user_data = {
 # 📚 মেগা সিলেবাস মেমোরি
 user_syllabus = {}
 
-# মেগা জিতু ভাইয়া সিস্টেম প্রম্পট
 SYSTEM_PROMPT = """
 You are 'Jeetu Bhaiya' (from Kota Factory), an elite, deeply empathetic, yet hardcore and practical personal AI Mentor for a Bangladeshi competitive examinee.
 
 ### YOUR ROLE (CRITICAL TASK TRACKING):
 The student has shared their detailed study plan/target for today. Your job is to monitor them like a real, strict elder brother.
-You also have access to their FULL SYLLABUS STATUS (Classes, Notes, Practice, Exams) stored in a JSON format.
+You also have access to their FULL SYLLABUS STATUS (Classes, Notes, Practice, Exams) stored in a compact tracker snapshot.
 - If they slacked off, SCOLD THEM (বকা দাও, কড়া রিয়েলিটি চেক দাও) but keep it loving. 
 - Look at their Pending Syllabus/Notes/Practice items and intelligently mock or remind them (e.g., "তুই ক্লাস করছিস ৩ দিন আগে কিন্তু প্র্যাকটিস এখনো পেন্ডিং কেন?").
 - Create extreme urgency based on the exact time remaining before midnight.
@@ -54,7 +54,7 @@ You also have access to their FULL SYLLABUS STATUS (Classes, Notes, Practice, Ex
 - Current Time in Bangladesh: {current_time}
 - Overall Backlog Status: {status_str}
 - The Full Plan/Target they set for today: {daily_target_raw}
-- Detailed Syllabus Tracker Snapshot (Use this to scold about missing notes/practice/exams): {syllabus_snapshot}
+- Detailed Syllabus Tracker Snapshot: {syllabus_snapshot}
 - Context for this message: {context_reason}
 """
 
@@ -76,7 +76,7 @@ def save_to_google_sheet():
                 "biology": user_data["biology"],
                 "math": user_data["math"]
             }),
-            "syllabus": json.dumps(user_syllabus) # মেগা সিলেবাস সিঙ্ক
+            "syllabus": json.dumps(user_syllabus)
         }
         requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
     except Exception as e:
@@ -100,7 +100,7 @@ def load_from_google_sheet():
                 user_data["chemistry"] = status_dict.get("chemistry", 0)
                 user_data["biology"] = status_dict.get("biology", 0)
                 user_data["math"] = status_dict.get("math", 0)
-                logging.info("All data & Syllabus successfully restored from Google Sheet!")
+                logging.info("All data restored successfully!")
     except Exception as e:
         logging.error(f"Apps Script Load Error: {e}")
 
@@ -120,9 +120,8 @@ async def get_status_str():
 
 def get_main_keyboard():
     keyboard = [
-        ['📊 স্ট্যাটাস চেক', '🎯 ডাইনামিক প্ল্যান সেট'],
-        ['✅ শেষ: Physics', '✅ শেষ: Chemistry'],
-        ['✅ শেষ: Biology', '✅ শেষ: Math']
+        ['🚀 /status', '🎯 /plan', '📊 /report'],
+        ['🛑 /stop_plan']
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -130,51 +129,76 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     welcome_msg = (
         "👋 **আসসালামু আলাইকুম ভাই! আমি তোমার মেন্টর 'Jeetu Bhaiya'**\n\n"
-        "তোমার মেগা সিলেবাস ট্র্যাকিং ইঞ্জিন এখন ১০০% রেডি!\n\n"
-        "💡 **নতুন কমান্ডসমূহ:**\n"
-        "🔹 `/add P1 C1 L1` - সিলেবাসে নতুন লেকচার যোগ করতে\n"
-        "🔹 `/done P1 C1 L1 class` - ক্লাস শেষ মার্ক করতে\n"
-        "🔹 `/done P1 C1 L1 note` - নোট শেষ করতে\n"
-        "🔹 `/done P1 C1 L1 practice` - প্র্যাকটিস শেষ করতে\n"
-        "🔹 `/done P1 C1 L1 exam` - এক্সাম শেষ করতে\n\n"
-        "🔍 **স্মার্ট ফিল্টার প্রোগ্রেস দেখতে:**\n"
-        "🔸 `/view` - পুরো সিলেবাস একসাথে দেখতে\n"
-        "🔸 `/view P1` - শুধু Physics 1st Paper দেখতে\n"
-        "🔸 `/view P1 C1` - Physics 1st Paper এর Chapter 1 দেখতে"
+        "তোমার মেগা প্রফেশনাল ড্যাশবোর্ড ইঞ্জিন এখন ১০০% রেডি!\n\n"
+        "💡 **সিলেবাস ম্যানেজমেন্ট কমান্ডসমূহ:**\n"
+        "🔹 `/add p1 c1 l1` - একটি লেকচার যোগ করতে\n"
+        "🔹 `/add p1 c1 l1-5` - একসাথে লুপে রেঞ্জ যোগ করতে (যেমন: ১ থেকে ৫)\n"
+        "🔹 `/done p1 c1 l1 class` - নির্দিষ্ট আইটেম ডান করতে (`class`/`note`/`practice`/`exam`)\n"
+        "🔹 `/done p1 c1 l1-5 note` - একসাথে রেঞ্জের নোট ডান করতে\n\n"
+        "🔍 **স্মার্ট রিপোর্ট ও ট্র্যাকিং:**\n"
+        "🔸 `/report` - পুরো সিলেবাসের প্রোগ্রেস বার ও ইনডেক্স দেখতে\n"
+        "🔸 `/report p1` - ফিল্টার করে শুধু নির্দিষ্ট সাবজেক্ট দেখতে\n"
+        "🔸 `/report p1 c1` - ফিল্টার করে নির্দিষ্ট চ্যাপ্টার দেখতে"
     )
     await update.message.reply_text(welcome_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-# --- 📚 সিলেবাস ট্র্যাকিং লজিক ---
+# --- 📚 মেগা কম্প্যাক্ট সিলেবাস ইঞ্জিন ---
+def parse_lecture_range(lecture_str):
+    """L1-L3 বা l1-5 থেকে লেকচারের লিস্ট জেনারেট করে"""
+    lecture_str = lecture_str.upper()
+    match = re.match(r"L(\d+)-L?(\d+)", lecture_str)
+    if match:
+        start_num = int(match.group(1))
+        end_num = int(match.group(2))
+        return [f"L{i}" for i in range(start_num, end_num + 1)]
+    return [lecture_str]
+
 async def add_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     if not context.args or len(context.args) < 3:
-        await update.message.reply_text("❌ ফরম্যাট ভুল ভাই! এভাবে লেখো: `/add P1 C1 L1`")
+        await update.message.reply_text("❌ ফরম্যাট ভুল ভাই! এভাবে লেখো: `/add P1 C1 L1` বা `/add P1 C1 L1-5`")
         return
     
-    key = f"{context.args[0]}_{context.args[1]}_{context.args[2]}".upper()
-    user_syllabus[key] = {"class": "Pending", "note": "Pending", "practice": "Pending", "exam": "Pending"}
+    sub = context.args[0].upper()
+    ch = context.args[1].upper()
+    lectures = parse_lecture_range(context.args[2])
+    
+    added_items = []
+    for lec in lectures:
+        key = f"{sub}_{ch}_{lec}"
+        user_syllabus[key] = {"class": "Pending", "note": "Pending", "practice": "Pending", "exam": "Pending"}
+        added_items.append(f"{sub} ∙ {ch} ∙ {lec}")
+        
     save_to_google_sheet()
-    await update.message.reply_text(f"✅ সিলেবাসে **{key.replace('_', ' ')}** সাকসেসফুলি যোগ করা হয়েছে!")
+    await update.message.reply_text(f"✅ সিলেবাসে নতুন **{len(added_items)}টি** লেকচার সাকসেসফুলি যোগ করা হয়েছে!\n📎 `{', '.join(added_items)}`")
 
 async def done_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     if not context.args or len(context.args) < 4:
-        await update.message.reply_text("❌ ফরম্যাট ভুল! এভাবে লেখো: `/done P1 C1 L1 class` বা `note`/`practice`/`exam`")
+        await update.message.reply_text("❌ ফরম্যাট ভুল! এভাবে লেখো: `/done P1 C1 L1 class` বা `/done P1 C1 L1-5 note`")
         return
     
-    key = f"{context.args[0]}_{context.args[1]}_{context.args[2]}".upper()
+    sub = context.args[0].upper()
+    ch = context.args[1].upper()
+    lectures = parse_lecture_range(context.args[2])
     task_type = context.args[3].lower()
     
-    if key not in user_syllabus:
-        await update.message.reply_text(f"❌ এই লেকচারটি তো সিলেবাসে নাই ভাই! আগে `/add P1 C1 L1` করো।")
+    if task_type not in ["class", "note", "practice", "exam"]:
+        await update.message.reply_text("❌ টাস্ক টাইপ ভুল! শুধু `class`, `note`, `practice`, বা `exam` ব্যবহার করো।")
         return
         
-    if task_type in ["class", "note", "practice", "exam"]:
-        user_syllabus[key][task_type] = "Done"
+    updated_count = 0
+    for lec in lectures:
+        key = f"{sub}_{ch}_{lec}"
+        if key in user_syllabus:
+            user_syllabus[key][task_type] = "Done"
+            updated_count += 1
+            
+    if updated_count > 0:
         save_to_google_sheet()
-        await update.message.reply_text(f"🎉 ওড়াধুড়া! **{key.replace('_', ' ')}** এর **{task_type.upper()}** কমপ্লিট মার্ক করা হয়েছে!")
+        await update.message.reply_text(f"🎉 ওড়াধুড়া! একসাথে **{updated_count}টি** লেকচারের **{task_type.upper()}** কমপ্লিট মার্ক করা হয়েছে!")
     else:
-        await update.message.reply_text("❌ টাস্ক টাইপ ভুল! শুধু `class`, `note`, `practice`, বা `exam` ব্যবহার করো।")
+        await update.message.reply_text("❌ এই রেঞ্জের কোনো লেকচার সিলেবাসে খুঁজে পাওয়া যায়নি! আগে `/add` করো।")
 
 async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
@@ -185,27 +209,80 @@ async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filter_prefix = ""
     if context.args:
         filter_prefix = "_".join(context.args).upper()
-    
-    report = "📚 **তোমার সিলেবাস প্রোগ্রেস রিপোর্ট:**\n"
-    if filter_prefix:
-        report += f"🔍 ফিল্টার: `{filter_prefix.replace('_', ' ')}`\n\n"
-    else:
-        report += "🌍 (সব সাবজেক্টের একসাথে)\n\n"
         
-    found_any = False
+    # --- 📊 প্রোগ্রেস বার এবং সামারি ক্যালকুলেশন ---
+    total_tasks = 0
+    completed_tasks = 0
+    total_lectures_count = 0
+    pending_lectures_count = 0
+    
     for item, status in user_syllabus.items():
         if filter_prefix and not item.startswith(filter_prefix):
             continue
-            
-        found_any = True
-        name = item.replace("_", " ")
-        report += f"🔹 **{name}**:\n   • 📺 Class: {status['class']}\n   • 📝 Note: {status['note']}\n   • 🎯 Practice: {status['practice']}\n   • 📝 Exam: {status['exam']}\n\n"
-    
-    if not found_any:
-        await update.message.reply_text(f"❌ এই ফিল্টারে (`{filter_prefix.replace('_', ' ')}`) কোনো লেকচার খুঁজে পাওয়া যায়নি!")
+        total_lectures_count += 1
+        
+        # ৪টা সাব-টাস্ক কাউন্ট
+        lec_pending = False
+        for task in ["class", "note", "practice", "exam"]:
+            total_tasks += 1
+            if status[task] == "Done":
+                completed_tasks += 1
+            else:
+                lec_pending = True
+                
+        if lec_pending:
+            pending_lectures_count += 1
+
+    if total_lectures_count == 0:
+        await update.message.reply_text(f"❌ এই ফিল্টারে (`{filter_prefix.replace('_', ' ')}`) কোনো লেকচার নেই!")
         return
+
+    # প্রোগ্রেস বার তৈরি
+    percentage = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
+    bar_length = 10
+    filled_length = int(bar_length * percentage // 100)
+    bar = "█" * filled_length + "░" * (bar_length - filled_length)
+    
+    # ড্যাশবোর্ড হেডার ডিজাইন
+    report = f"📚 **তোমার সিলেবাস প্রোগ্রেস রিপোর্ট:**\n"
+    if filter_prefix:
+        report += f"🔍 ফিল্টার: `{filter_prefix.replace('_', ' ')}`\n"
+    report += f"📈 Progress: `[{bar}] {percentage}%`\n"
+    report += f"📝 টোটাল লেকচার: `{total_lectures_count}` | ⏳ পেন্ডিং: `{pending_lectures_count}`\n"
+    report += "────────────────────\n\n"
+    
+    # কিউট ১-লাইনের ইনডেক্স জেনারেশন
+    for item, status in sorted(user_syllabus.items()):
+        if filter_prefix and not item.startswith(filter_prefix):
+            continue
+            
+        name = item.replace("_", " ∙ ")
+        
+        # ইমোজি বৃত্ত লজিক
+        c_emoji = "🟢" if status["class"] == "Done" else "🔴"
+        n_emoji = "🟢" if status["note"] == "Done" else "🔴"
+        p_emoji = "🟢" if status["practice"] == "Done" else "🔴"
+        e_emoji = "🟢" if status["exam"] == "Done" else "🔴"
+        
+        report += f"• **{name}** ➔ 📺{c_emoji} 📝{n_emoji} 🎯{p_emoji} 🏆{e_emoji}\n"
         
     await update.message.reply_text(report, parse_mode="Markdown")
+
+# --- 🛑 রিমাইন্ডার বন্ধ করার কমান্ড ---
+async def stop_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ALLOWED_CHAT_ID: return
+    current_jobs = context.job_queue.get_jobs_by_name("hourly_tracker")
+    
+    if not current_jobs:
+        await update.message.reply_text("🤷‍♂️ ব্যাকগ্রাউন্ডে কোনো একটিভ প্ল্যান বা টাইমার চালু নাই ভাই!")
+        return
+        
+    for job in current_jobs:
+        job.schedule_removal()
+        
+    user_data["daily_target_raw"] = "No target set yet."
+    save_to_google_sheet()
+    await update.message.reply_text("🛑 **আজকের মতো ১ ঘণ্টার নোটিফিকেশন লুপ স্টপ করা হলো!**\nজিতু ভাইয়া তোমাকে ছুটি দিল। ভালো করে ঘুমাও, কালকে সকালে আবার ট্র্যাকে ফিরতে হবে।")
 
 # --- ⏰ ডাইনামিক রিমাইন্ডার ইঞ্জিন ---
 async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
@@ -216,12 +293,12 @@ async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
     bd_time = get_bd_time().strftime("%I:%M %p")
     syllabus_snapshot = json.dumps(user_syllabus)
     
-    context_reason = f"Automated 1-hour check. Current Bangladesh Time is EXACTLY {bd_time}. Urgently push the student to finish their daily target before 12 AM midnight. Analyze the missing tasks (Pending notes/practice/exams) in the syllabus snapshot and mock them if they are slacking off."
+    context_reason = f"Automated 1-hour check. Current Bangladesh Time is {bd_time}. Remind the student how much time is left before midnight. Look at the pending syllabus items and mock them if they are lagging in notes/practice."
 
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents="Give me the hourly notification message.",
+            contents="Give me the hourly push notification.",
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=syllabus_snapshot, context_reason=context_reason),
                 temperature=0.8,
@@ -236,22 +313,35 @@ async def test_hourly_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("⏳ ১০ সেকেন্ডের রিয়েলিটি চেক আসছে...")
     context.job_queue.run_once(hourly_mentor_check, 10)
 
+async def handle_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ALLOWED_CHAT_ID: return
+    status = await get_status_str()
+    await update.message.reply_text(f"📝 **বর্তমান অবস্থা:**\n\n{status}", parse_mode="Markdown")
+
+async def handle_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ALLOWED_CHAT_ID: return
+    user_data["is_waiting_for_target"] = True
+    await update.message.reply_text("📝 **ভাই, আজকে রাত ১২টার মধ্যে কী কী ওড়াতে চাও? একদম ডিটেইলসে বলো!**")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
-
     user_text = update.message.text
-    subject = None
 
-    if user_text == '📊 স্ট্যাটাস চেক':
-        status = await get_status_str()
-        await update.message.reply_text(f"📝 **বর্তমান অবস্থা:**\n\n{status}", parse_mode="Markdown")
+    # বাটন টেক্সট ও কমান্ড ইন্টারসেপ্ট লজিক (ফর ব্যাকওয়ার্ড সামঞ্জস্য)
+    if user_text in ['📊 /report', '/report']:
+        await view_syllabus(update, context)
+        return
+    elif user_text in ['🚀 /status', '/status']:
+        await handle_status_command(update, context)
+        return
+    elif user_text in ['🎯 /plan', '/plan']:
+        await handle_plan_command(update, context)
+        return
+    elif user_text in ['🛑 /stop_plan', '/stop_plan']:
+        await stop_plan(update, context)
         return
 
-    elif user_text == '🎯 ডাইনামিক প্ল্যান সেট':
-        user_data["is_waiting_for_target"] = True
-        await update.message.reply_text("📝 **ভাই, আজকে রাত ১২টার মধ্যে কী কী ওড়াতে চাও? একদম ডিটেইলসে বলো!**")
-        return
-
+    # ডাইনামিক প্ল্যান ইনপুট প্রসেসিং
     if user_data["is_waiting_for_target"]:
         user_data["daily_target_raw"] = user_text
         user_data["is_waiting_for_target"] = False
@@ -268,40 +358,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             model='gemini-2.5-flash',
             contents=f"Set target: {user_text}",
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=json.dumps(user_syllabus), context_reason="Target just set by user. Give an extreme motivational push."),
+                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=json.dumps(user_syllabus), context_reason="Target just set by user."),
                 temperature=0.7,
             ),
         )
         await update.message.reply_text(response.text, parse_mode="Markdown")
         return
 
-    if user_text == '✅ শেষ: Physics':
-        user_data["physics"] += 1; user_data["backlog_left"] -= 1; subject = "Physics"
-    elif user_text == '✅ শেষ: Chemistry':
-        user_data["chemistry"] += 1; user_data["backlog_left"] -= 1; subject = "Chemistry"
-    elif user_text == '✅ শেষ: Biology':
-        user_data["biology"] += 1; user_data["backlog_left"] -= 1; subject = "Biology"
-    elif user_text == '✅ শেষ: Math':
-        user_data["math"] += 1; user_data["backlog_left"] -= 1; subject = "Math"
-
-    if subject: save_to_google_sheet()
-
+    # নরমাল চ্যাট উইথ জিতু ভাইয়া
     status_str = await get_status_str()
     bd_time = get_bd_time().strftime("%I:%M %p")
-    ai_input = f"Update from student: I just completed 1 {subject} class!" if subject else user_text
-
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=ai_input,
+            contents=user_text,
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=json.dumps(user_syllabus), context_reason="Normal chat conversation. Tell student what time it is and analyze if they are making real progress."),
+                system_instruction=SYSTEM_PROMPT.format(current_time=bd_time, status_str=status_str, daily_target_raw=user_data["daily_target_raw"], syllabus_snapshot=json.dumps(user_syllabus), context_reason="Normal conversation."),
                 temperature=0.7,
             ),
         )
-        reply = response.text
-        if subject: reply += f"\n\n💡 {status_str}"
-        await update.message.reply_text(reply, parse_mode="Markdown")
+        await update.message.reply_text(response.text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Gemini Error: {e}")
         await update.message.reply_text("নেটওয়ার্ক জ্যাম ব্রো!")
@@ -313,13 +389,16 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("status", handle_status_command))
+    app.add_handler(CommandHandler("plan", handle_plan_command))
+    app.add_handler(CommandHandler("report", view_syllabus))
     app.add_handler(CommandHandler("add", add_syllabus))
     app.add_handler(CommandHandler("done", done_syllabus))
-    app.add_handler(CommandHandler("view", view_syllabus))
+    app.add_handler(CommandHandler("stop_plan", stop_plan))
     app.add_handler(CommandHandler("test_remind", test_hourly_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Dynamic Mentor Bot is running...")
+    print("Mega Upgraded Mentor Bot is running...")
     app.run_polling()
 
 if __name__ == '__main__':
