@@ -8,22 +8,21 @@ import re
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from google import genai
-from google.genai import types
 
 # Logging setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # API Keys & Security Configuration
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# OpenRouter API Key (আগের GEMINI_API_KEY ও ব্যাকআপ হিসেবে কাজ করবে)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("GEMINI_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")
 
 # 🔒 তোমার টেলিগ্রাম চ্যাট আইডি
 ALLOWED_CHAT_ID = int(os.environ.get("ALLOWED_CHAT_ID", 5959341337))
 
-# Initialize Gemini Client
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Selected Model for OpenRouter
+OPENROUTER_MODEL = "google/gemma-4-31b-it:free"
 
 # Advanced State Management
 user_data = {
@@ -60,6 +59,43 @@ def get_bd_time():
     """বাংলাদেশের বর্তমান সময় অবজেক্ট রিটার্ন করে"""
     return datetime.datetime.utcnow() + datetime.timedelta(hours=6)
 
+# --- 🌐 OpenRouter API Integration Helper ---
+def generate_openrouter_chat(system_prompt: str, user_message: str, temperature: float = 0.7) -> str:
+    """OpenRouter API ব্যবহার করে চ্যাট জেনারেট করার ফাংশন"""
+    if not OPENROUTER_API_KEY:
+        logging.error("OpenRouter API Key is missing!")
+        return "আরে ভাই, তোমার OpenRouter API Key তো সেট করা নাই! আগে এনভায়রনমেন্ট ভ্যারিয়েবল সেট করো।"
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://telegram.org",  # Required by OpenRouter rules
+        "X-Title": "Jeetu Bhaiya Mentor Bot"
+    }
+    
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": temperature
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=25)
+        if response.status_code == 200:
+            res_json = response.json()
+            # Response থেকে টেক্সট এক্সট্র্যাক্ট করা
+            return res_json["choices"][0]["message"]["content"]
+        else:
+            logging.error(f"OpenRouter Error: Status Code {response.status_code} - {response.text}")
+            return "ধুর ভাই! OpenRouter সার্ভার থেকে রেসপন্স আসছে না। একটু পরে আবার ট্রাই করো তো।"
+    except Exception as e:
+        logging.error(f"OpenRouter Connection Error: {e}")
+        return "নেটওয়ার্ক একটু ঝামেলা করতেছে ভাই! কানেকশন ড্রপ হইছে।"
+
 # --- 📊 ডাইনামিক সিলেবাস ও ব্যাকলগ অ্যানালিটিক্স ইঞ্জিন ---
 def calculate_backlog_metrics():
     """user_syllabus থেকে রিয়েল-টাইম ব্যাকলগ ও সাবজেক্ট ওয়াইজ পেন্ডিং লেকচার হিসাব করে"""
@@ -92,13 +128,8 @@ async def get_status_str():
         f"আজকের লক্ষ্য: {user_data['daily_target_raw']}"
     )
 
-# --- 🌐 Apps Script Database Sync Engine (FIXED) ---
+# --- 🌐 Apps Script Database Sync Engine ---
 def save_to_google_sheet():
-    """
-    ✅ FIX: প্রতিটি লেকচার আলাদা আলাদা POST করা হচ্ছে।
-    Apps Script এর doPost() এ 'syllabus_update: True' ফ্ল্যাগ পাঠানো হচ্ছে
-    যেটা আগের কোডে ছিল না, তাই শিটে কিছু সেভ হচ্ছিল না।
-    """
     if not APPS_SCRIPT_URL:
         return
     try:
@@ -106,7 +137,7 @@ def save_to_google_sheet():
         for key, status in user_syllabus.items():
             payload = {
                 "chat_id": str(ALLOWED_CHAT_ID),
-                "syllabus_update": True,        # ✅ Apps Script এই ফ্ল্যাগ খোঁজে
+                "syllabus_update": True,
                 "lecture_key": key,
                 "class": status.get("class", "Pending"),
                 "note": status.get("note", "Pending"),
@@ -118,7 +149,7 @@ def save_to_google_sheet():
         # টার্গেট আলাদা POST এ পাঠাও
         target_payload = {
             "chat_id": str(ALLOWED_CHAT_ID),
-            "target_update": True,              # ✅ Apps Script এই ফ্ল্যাগ খোঁজে
+            "target_update": True,
             "target": user_data["daily_target_raw"]
         }
         requests.post(APPS_SCRIPT_URL, json=target_payload, timeout=10)
@@ -128,10 +159,6 @@ def save_to_google_sheet():
 
 
 def load_from_google_sheet():
-    """
-    ✅ FIX: Apps Script doGet() থেকে 'syllabus' dict রিটার্ন আসে,
-    কিন্তু আগের কোড 'syllabus_rows' লিস্ট খুঁজছিল — তাই সিলেবাস সবসময় খালি দেখাচ্ছিল।
-    """
     global user_data, user_syllabus
     if not APPS_SCRIPT_URL:
         return
@@ -143,7 +170,6 @@ def load_from_google_sheet():
             if res_data.get("found"):
                 user_data["daily_target_raw"] = res_data.get("target", "No target set yet.")
 
-                # ✅ "syllabus_rows" এর বদলে "syllabus" dict পড়ছি
                 syllabus_dict = res_data.get("syllabus", {})
                 new_syllabus = {}
                 for key, status in syllabus_dict.items():
@@ -189,7 +215,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data["current_state"] = "NORMAL"
     welcome_msg = (
         "👋 **আসসালামু আলাইকুম ভাই! আমি তোমার মেন্টর 'Jeetu Bhaiya'**\n\n"
-        "গুগল শিট সিঙ্ক এখন পারফেক্টলি ফিক্স হয়েছে। ডেটা লাইভ লোড হচ্ছে!\n\n"
+        "গুগল শিট সিঙ্ক এবং OpenRouter Gemma-4 ইঞ্জিন এখন ফুললি রানিং!\n\n"
         "🎮 **বাটন গাইড:**\n"
         "🔹 ১ম লাইনের ৪টি বাটন দিয়ে ডাইরেক্ট অ্যাকশন নিতে পারবে।\n"
         "🔹 `Manage Syllabus` বাটন চাপলে সাব-মেনু অন হবে।"
@@ -293,23 +319,21 @@ async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
     syllabus_snapshot = json.dumps(user_syllabus)
 
     context_reason = f"Automated 1-hour check. Current Bangladesh Time is {bd_time}. Remind the student how much time is left before midnight."
+    system_instruction_formatted = SYSTEM_PROMPT.format(
+        current_time=bd_time,
+        status_str=status_str,
+        daily_target_raw=user_data["daily_target_raw"],
+        syllabus_snapshot=syllabus_snapshot,
+        context_reason=context_reason
+    )
 
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents="Give me the hourly push notification.",
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(
-                    current_time=bd_time,
-                    status_str=status_str,
-                    daily_target_raw=user_data["daily_target_raw"],
-                    syllabus_snapshot=syllabus_snapshot,
-                    context_reason=context_reason
-                ),
-                temperature=0.8,
-            ),
+        response_text = generate_openrouter_chat(
+            system_prompt=system_instruction_formatted,
+            user_message="Give me the hourly push notification.",
+            temperature=0.8
         )
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=response.text, parse_mode="Markdown")
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=response_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Hourly reminder error: {e}")
 
@@ -418,24 +442,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status_str = await get_status_str()
         bd_time = get_bd_time().strftime("%I:%M %p")
+        system_instruction_formatted = SYSTEM_PROMPT.format(
+            current_time=bd_time,
+            status_str=status_str,
+            daily_target_raw=user_data["daily_target_raw"],
+            syllabus_snapshot=json.dumps(user_syllabus),
+            context_reason="Target just set by user."
+        )
+
         try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=f"Set target: {user_text}",
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT.format(
-                        current_time=bd_time,
-                        status_str=status_str,
-                        daily_target_raw=user_data["daily_target_raw"],
-                        syllabus_snapshot=json.dumps(user_syllabus),
-                        context_reason="Target just set by user."
-                    ),
-                    temperature=0.7,
-                ),
+            response_text = generate_openrouter_chat(
+                system_prompt=system_instruction_formatted,
+                user_message=f"Set target: {user_text}",
+                temperature=0.7
             )
-            await update.message.reply_text(response.text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+            await update.message.reply_text(response_text, parse_mode="Markdown", reply_markup=get_main_keyboard())
         except Exception as e:
-            logging.error(f"Gemini Target Error: {e}")
+            logging.error(f"OpenRouter Target Error: {e}")
             await update.message.reply_text("আজকের টার্গেট সেট হয়েছে ভাই! পড়তে বসে যাও!", reply_markup=get_main_keyboard())
         return
 
@@ -499,24 +522,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 🚀 ৩. ওপেন ফ্রি চ্যাট রুট
     status_str = await get_status_str()
     bd_time = get_bd_time().strftime("%I:%M %p")
+    system_instruction_formatted = SYSTEM_PROMPT.format(
+        current_time=bd_time,
+        status_str=status_str,
+        daily_target_raw=user_data["daily_target_raw"],
+        syllabus_snapshot=json.dumps(user_syllabus),
+        context_reason="Normal conversation."
+    )
+
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_text,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(
-                    current_time=bd_time,
-                    status_str=status_str,
-                    daily_target_raw=user_data["daily_target_raw"],
-                    syllabus_snapshot=json.dumps(user_syllabus),
-                    context_reason="Normal conversation."
-                ),
-                temperature=0.7,
-            ),
+        response_text = generate_openrouter_chat(
+            system_prompt=system_instruction_formatted,
+            user_message=user_text,
+            temperature=0.7
         )
-        await update.message.reply_text(response.text, parse_mode="Markdown")
+        await update.message.reply_text(response_text, parse_mode="Markdown")
     except Exception as e:
-        logging.error(f"Gemini Normal Chat Error: {e}")
+        logging.error(f"OpenRouter Normal Chat Error: {e}")
         await update.message.reply_text("নেটওয়ার্ক একটু ফ্ল্যাকচুয়েট করছে ভাই! আরেকবার বলো তো?")
 
 
@@ -534,7 +556,7 @@ def main():
     app.add_handler(CommandHandler("test_remind", test_hourly_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("✅ Fixed Sync Bot Engine is successfully live...")
+    print("✅ Fixed OpenRouter (Gemma-4) Sync Bot Engine is successfully live...")
     app.run_polling()
 
 
