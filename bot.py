@@ -1,5 +1,7 @@
 import os
 import logging
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from groq import Groq
@@ -7,15 +9,14 @@ from groq import Groq
 # Logging setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# API Keys (Render-এ সেট করব)
+# API Keys
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 # Initialize Groq Client
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Initial Mock Data (In-memory)
-# বাস্তবের জন্য তুমি চাইলে ডেটাবেজ ইউজ করতে পারো, বাট ফাস্ট করার জন্য এটা মেমোরিতে থাকবে।
+# Mock Data
 user_data = {
     "backlog_left": 30,
     "physics": 0,
@@ -24,7 +25,6 @@ user_data = {
     "math": 0
 }
 
-# SYSTEM PROMPT (যেটা আগেরবার বানালাম)
 SYSTEM_PROMPT = """
 You are an elite, highly empathetic, and result-oriented Personal AI Mentor for a student preparing for competitive exams. The student started with a major backlog of 30 online classes across Physics, Chemistry, Biology, and Math.
 
@@ -37,9 +37,17 @@ Your goal is to guide the student through their syllabus, track their progress, 
 - If they say they want a break or feel down ('bhalo lagtese na'), give them a strictly timed 15-min offline break task, or quick micro-tips.
 """
 
+# Dummy Server to satisfy Render's Free Web Service Port check
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
+    print(f"Dummy server running on port {port}...")
+    httpd.serve_forever()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
-        "👋 Assalamu Alaikum! Ami tomar AI Mentor.\n\n"
+        "👋 Assalamu Alaikum! Ami tomar AI Mentor 'Khayalamu'.\n\n"
         "Tomar 30 ta class er backlog sesh korar mission e ami tomar sathe achi. "
         "Jakhon e kono class, note, practice ar exam sesh korbe, amake update janao!\n\n"
         "**Commands:**\n"
@@ -59,12 +67,10 @@ async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def track_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command = update.message.text
-    
     if user_data["backlog_left"] <= 0:
         await update.message.reply_text("🎉 Wow! Tomar sob backlog sesh!")
         return
 
-    # Update logic based on command
     if "/done_phy" in command:
         user_data["physics"] += 1
         user_data["backlog_left"] -= 1
@@ -83,24 +89,18 @@ async def track_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
         subject = "Math"
     
     status_str = await get_status_str()
-    
-    # Prompting Groq for celebration & next steps
     chat_completion = groq_client.chat.completions.create(
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT.format(status_str=status_str)},
             {"role": "user", "content": f"I just finished 1 {subject} class, including notes, practice, and exam!"}
         ],
-        model="llama3-8b-8192", # Fast and efficient
+        model="llama3-8b-8192",
     )
-    
-    reply = chat_completion.choices[0].message.content
-    await update.message.reply_text(reply)
+    await update.message.reply_text(chat_completion.choices[0].message.content)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     status_str = await get_status_str()
-    
-    # Send regular chat/motivation/break requests to Groq
     chat_completion = groq_client.chat.completions.create(
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT.format(status_str=status_str)},
@@ -108,11 +108,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         model="llama3-8b-8192",
     )
-    
-    reply = chat_completion.choices[0].message.content
-    await update.message.reply_text(reply)
+    await update.message.reply_text(chat_completion.choices[0].message.content)
 
 def main():
+    # Start the dummy server in a background thread
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+
     # Build Telegram Application
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -122,7 +123,6 @@ def main():
     app.add_handler(CommandHandler(["done_phy", "done_chem", "done_bio", "done_math"], track_progress))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Start polling (Keep alive)
     print("Bot is running...")
     app.run_polling()
 
