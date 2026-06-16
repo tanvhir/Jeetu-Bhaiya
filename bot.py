@@ -18,7 +18,7 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")
 ALLOWED_CHAT_ID = int(os.environ.get("ALLOWED_CHAT_ID", 5959341337))
 
-OPENROUTER_MODEL = "nvidia/llama-nemotron-rerank-vl-1b-v2:free"
+OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
 
 # 🧠 State & Memory
 user_data = {
