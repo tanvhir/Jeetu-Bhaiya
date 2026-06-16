@@ -5,7 +5,6 @@ import datetime
 import requests
 import json
 import re
-import html  # HTML এস্কেপিং এর জন্য আমদানী করা হয়েছে
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -35,6 +34,7 @@ SUBJECT_ICONS = {"P": "🧲", "C": "🧪", "M": "📐", "B": "🧬"}
 
 # 📖 চ্যাপ্টার ডিকশনারি
 CHAPTER_NAMES = {
+
     # Physics 1st Paper
     "P1_C1": "ভৌত জগৎ ও পরিমাপ",
     "P1_C2": "ভেক্টর",
@@ -83,6 +83,7 @@ CHAPTER_NAMES = {
     "M1_C9": "অন্তরীকরণ",
     "M1_C10": "যোগজীকরণ",
 
+
     # Mathematics 2nd Paper
     "M2_C1": "বাস্তব সংখ্যা ও অসমতা",
     "M2_C2": "বহুপদী ও বহুপদী সমীকরণ",
@@ -121,13 +122,8 @@ CHAPTER_NAMES = {
     "B2_C11": "জিনতত্ত্ব ও বিবর্তন",
     "B2_C12": "প্রাণীর আচরণ",
     "B2_C13": "জীবের পরিবেশ, বিস্তার ও সংরক্ষণ"
-}
 
-def safe_html(text):
-    """ইউজার ইনপুট বা ডাটাবেজের টেক্সট যাতে HTML হিসেবে ক্র্যাশ না করে সেজন্য এস্কেপ করা"""
-    if not text:
-         return ""
-    return html.escape(str(text))
+}
 
 def get_friendly_name(lecture_key):
     parts = lecture_key.split("_")
@@ -171,15 +167,12 @@ def save_memory_to_sheet():
     if not APPS_SCRIPT_URL: return
     try:
         requests.post(APPS_SCRIPT_URL, json={"chat_id": str(ALLOWED_CHAT_ID), "memory_update": True, "chat_history": user_data["chat_history"], "kaizen_goals": user_data["kaizen_goals"]}, timeout=10)
-    except Exception as e:
-        logging.error(f"❌ Memory Sync Error: {e}")
+    except Exception: pass
 
 def save_target_to_sheet():
     if not APPS_SCRIPT_URL: return
-    try: 
-        requests.post(APPS_SCRIPT_URL, json={"chat_id": str(ALLOWED_CHAT_ID), "target_update": True, "target": user_data["daily_target_raw"]}, timeout=10)
-    except Exception as e:
-        logging.error(f"❌ Target Sync Error: {e}")
+    try: requests.post(APPS_SCRIPT_URL, json={"chat_id": str(ALLOWED_CHAT_ID), "target_update": True, "target": user_data["daily_target_raw"]}, timeout=10)
+    except Exception: pass
 
 def save_single_lecture_to_sheet(lecture_key):
     if not APPS_SCRIPT_URL: return
@@ -187,8 +180,7 @@ def save_single_lecture_to_sheet(lecture_key):
         s = user_syllabus.get(lecture_key, {})
         payload = {"chat_id": str(ALLOWED_CHAT_ID), "syllabus_update": True, "lecture_key": lecture_key, "class": s.get("class", "Pending"), "note": s.get("note", "Pending"), "practice": s.get("practice", "Pending"), "exam": s.get("exam", "Pending")}
         requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
-    except Exception as e:
-        logging.error(f"❌ Lecture Sync Error: {e}")
+    except Exception: pass
 
 def load_from_google_sheet():
     global user_data, user_syllabus
@@ -202,9 +194,8 @@ def load_from_google_sheet():
                 user_data["chat_history"] = data.get("chat_history", [])
                 user_data["kaizen_goals"] = data.get("kaizen_goals", "কোনো কাইজেন প্ল্যান সেট করা হয়নি।")
                 user_syllabus = {k: {"class": st.get("class", "Pending"), "note": st.get("note", "Pending"), "practice": st.get("practice", "Pending"), "exam": st.get("exam", "Pending")} for k, st in data.get("syllabus", {}).items()}
-                logging.info("✅ Database Loaded Successfully from Google Sheets!")
-    except Exception as e: 
-        logging.error(f"Load Error: {e}")
+                logging.info("✅ Database Loaded!")
+    except Exception as e: logging.error(f"Load Error: {e}")
 
 # --- 🌐 OpenRouter Core with Kaizen Interceptor ---
 def generate_openrouter_chat(system_prompt: str, user_message: str, temperature: float = 0.7) -> str:
@@ -222,9 +213,7 @@ def generate_openrouter_chat(system_prompt: str, user_message: str, temperature:
             if len(user_data["chat_history"]) > MAX_HISTORY_LENGTH: user_data["chat_history"] = user_data["chat_history"][-MAX_HISTORY_LENGTH:]
             threading.Thread(target=save_memory_to_sheet, daemon=True).start()
             return bot_reply
-    except Exception as e: 
-        logging.error(f"OpenRouter Error: {e}")
-    return "নেটওয়ার্ক ড্রপ খাইছে ভাই! আবার ট্রাই কর।"
+    except Exception: return "নেটওয়ার্ক ড্রপ খাইছে ভাই! আবার ট্রাই কর।"
 
 # --- 📊 Premium Dashboard Logic ---
 def create_progress_bar(percentage):
@@ -249,19 +238,16 @@ async def generate_premium_status():
                 
     overall_prog = (done_lec / tot_lec * 100) if tot_lec > 0 else 0
     
-    # HTML ফরম্যাটে ড্যাশবোর্ড জেনারেট করা হয়েছে (ক্র্যাশ প্রুফ)
-    msg = f"🎛️ <b>STATUS</b>\n━━━━━━━━━━━━━━━━━━━\n🔥 <b>Overall Progress:</b> <code>{create_progress_bar(overall_prog)}</code>\n<b>Total Lecture:</b> <code>{tot_lec}</code>\n<b>Completed Lecture:</b> <code>{done_lec}</code>\n<b>Backlog:</b> <code>{tot_lec - done_lec}</code>\n━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = f"🎛️ **STATUS**\n━━━━━━━━━━━━━━━━━━━\n🔥 **Overall Progress:** `{create_progress_bar(overall_prog)}`\n**Total Lecture:** `{tot_lec}`\n**Completed Lecture:** `{done_lec}`\n**Backlog:** `{tot_lec - done_lec}`\n━━━━━━━━━━━━━━━━━━━\n\n"
     
     for sk in ["P", "C", "M", "B"]:
         d = subs[sk]
         if d["tot"] > 0:
             prog = (d["done"] / d["tot"] * 100)
-            msg += f"{SUBJECT_ICONS[sk]} <b>{SUBJECT_NAMES[sk]}:</b> <code>{create_progress_bar(prog)}</code>\n"
-            msg += f"Lecture: <code>{d['c']}/{d['tot']}</code>\nNote: <code>{d['n']}/{d['tot']}</code>\nPractice: <code>{d['p']}/{d['tot']}</code>\nExam: <code>{d['e']}/{d['tot']}</code>\n\n"
+            msg += f"{SUBJECT_ICONS[sk]} **{SUBJECT_NAMES[sk]}:** `{create_progress_bar(prog)}`\n"
+            msg += f"Lecture: `{d['c']}/{d['tot']}`\nNote: `{d['n']}/{d['tot']}`\nPractice: `{d['p']}/{d['tot']}`\nExam: `{d['e']}/{d['tot']}`\n\n"
             
-    msg += f"━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"↳ <b>আজকের টার্গেটঃ</b> {safe_html(user_data['daily_target_raw'])}\n"
-    msg += f"↳ <b>কাইজেন গোলঃ</b> {safe_html(user_data['kaizen_goals'])}"
+    msg += f"━━━━━━━━━━━━━━━━━━━\n↳ **আজকের টার্গেটঃ** {user_data['daily_target_raw']}"
     return msg
 
 async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -277,19 +263,18 @@ async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ch not in tree[sk]: tree[sk][ch] = []
             tree[sk][ch].append((lec, s))
             
-    msg = "📚 <b>DETAILED SYLLABUS REPORT</b>\n━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "📚 **DETAILED SYLLABUS REPORT**\n━━━━━━━━━━━━━━━━━━━\n\n"
     for sk in ["P", "C", "M", "B"]:
         if tree[sk]:
-            msg += f"{SUBJECT_ICONS[sk]} <b>{SUBJECT_NAMES[sk]}</b>\n"
+            msg += f"{SUBJECT_ICONS[sk]} **{SUBJECT_NAMES[sk]}**\n"
             for ch, lecs in tree[sk].items():
                 ch_name = CHAPTER_NAMES.get(ch, ch)
-                # safe_html দিয়ে চ্যাপ্টার নেম র‍্যাপ করা হয়েছে যাতে আন্ডারস্কোরে ক্র্যাশ না খায়
-                msg += f"📁 <i>{safe_html(ch_name)} ({safe_html(ch.split('_')[1])}):</i>\n"
+                msg += f"📁 *{ch_name} ({ch.split('_')[1]}):*\n"
                 for lec, s in lecs:
                     msg += f"  ↳ {lec}: 📺{'🟢' if s.get('class')=='Done' else '🔴'} 📝{'🟢' if s.get('note')=='Done' else '🔴'} 🎯{'🟢' if s.get('practice')=='Done' else '🔴'} 🏆{'🟢' if s.get('exam')=='Done' else '🔴'}\n"
             msg += "\n"
-    msg += "<i>(সূচক: 📺=Class, 📝=Note, 🎯=Practice, 🏆=Exam)</i>"
-    await update.message.reply_text(msg, parse_mode="HTML")
+    msg += "*(সূচক: 📺=Class, 📝=Note, 🎯=Practice, 🏆=Exam)*"
+    await update.message.reply_text(msg)
 
 def run_dummy_server():
     HTTPServer(('', int(os.environ.get("PORT", 8080))), SimpleHTTPRequestHandler).serve_forever()
@@ -306,18 +291,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     user_data["current_state"] = "NORMAL"
     msg = (
-        "👋 <b>কিরে ভাই, চলে আসলি? আমি তোর মেন্টর 'Jeetu Bhaiya'।</b>\n\n"
+        "👋 **কিরে ভাই, চলে আসলি? আমি তোর মেন্টর 'Jeetu Bhaiya'।**\n\n"
         "তোর পড়াশোনা, সিলেবাস ট্র্যাকিং আর লাইফস্টাইল অপটিমাইজেশনের পুরো দায়িত্ব এখন আমার। ফালতু সময় নষ্ট না করে সরাসরি ট্র্যাকে ফোকাস কর।\n\n"
-        "⚙️ <b>কী কী করতে পারবি এখানে?</b>\n"
-        "📊 <b>Check Status:</b> সাবজেক্ট-ভিত্তিক প্রোগ্রেস ড্যাশবোর্ড।\n"
-        "📚 <b>Syllabus Report:</b> ডিটেইলড সিলেবাস ট্রি-রিপোর্ট।\n"
-        "🎯 <b>Set Target:</b> প্রতিদিনের মিশন।\n"
-        "➕ <b>Manage Syllabus:</b> লেকচার অ্যাড এবং ডান মার্ক করা।\n\n"
-        "🧠 <b>The Kaizen Engine (Life Mentor):</b>\n"
+        "⚙️ **কী কী করতে পারবি এখানে?**\n"
+        "📊 **Check Status:** সাবজেক্ট-ভিত্তিক প্রোগ্রেস ড্যাশবোর্ড।\n"
+        "📚 **Syllabus Report:** ডিটেইলড সিলেবাস ট্রি-রিপোর্ট।\n"
+        "🎯 **Set Target:** প্রতিদিনের মিশন।\n"
+        "➕ **Manage Syllabus:** লেকচার অ্যাড এবং ডান মার্ক করা।\n\n"
+        "🧠 **The Kaizen Engine (Life Mentor):**\n"
         "শুধু পড়াশোনা না, আমার সাথে চ্যাট করে তোর লাইফস্টাইল (যেমন: স্লিপ সাইকেল, রুটিন) গোল সেট করতে পারিস। আমি মানুষের মতো গাইড করবো।\n\n"
         "নিচের মেনু থেকে তোর কাজ শুরু কর। লেটস গো! 🚀"
     )
-    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=get_main_keyboard())
+    await update.message.reply_text(msg, reply_markup=get_main_keyboard())
 
 async def stop_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
@@ -338,13 +323,8 @@ def extract_lecture_details(text):
 async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
     if user_data["daily_target_raw"] == "No target set yet.": return
     sys_prompt = SYSTEM_PROMPT.format(current_time=get_bd_time().strftime("%I:%M %p"), daily_target_raw=user_data["daily_target_raw"], kaizen_goals=user_data["kaizen_goals"], context_reason="Hourly reminder. Keep it SHORT (1-2 lines). Push them towards target and life goals.")
-    try: 
-        reply_msg = generate_openrouter_chat(sys_prompt, "[SYSTEM: HOURLY REMINDER TRIGGERED]", 0.8)
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=reply_msg, parse_mode="Markdown")
-    except Exception: 
-        # Markdown পার্সিং ক্র্যাশ এড়াতে ফলব্যাক
-        try: await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=reply_msg)
-        except Exception: pass
+    try: await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=generate_openrouter_chat(sys_prompt, "[SYSTEM: HOURLY REMINDER TRIGGERED]", 0.8), parse_mode="Markdown")
+    except Exception: pass
 
 async def test_hourly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
@@ -355,50 +335,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     state = user_data["current_state"]
 
-    if text == 'Check Status': 
-        return await update.message.reply_text(await generate_premium_status(), parse_mode="HTML")
-    elif text == 'Set Target': 
-        user_data["current_state"] = "WAITING_FOR_TARGET"
-        return await update.message.reply_text("🎯 আজকের টার্গেট?")
-    elif text == 'Syllabus Report': 
-        return await view_syllabus(update, context)
-    elif text == 'Stop Reminders': 
-        return await stop_plan(update, context)
-    elif text == 'Manage Syllabus': 
-        user_data["current_state"] = "NORMAL"
-        return await update.message.reply_text("📚 সিলেবাস ম্যানেজ করো:", reply_markup=get_syllabus_keyboard())
-    elif text == 'Back to Main Menu': 
-        user_data["current_state"] = "NORMAL"
-        return await update.message.reply_text("🔙 মেইন মেনু", reply_markup=get_main_keyboard())
+    if text == 'Check Status': return await update.message.reply_text(await generate_premium_status(), parse_mode="Markdown")
+    elif text == 'Set Target': user_data["current_state"] = "WAITING_FOR_TARGET"; return await update.message.reply_text("🎯 আজকের টার্গেট?")
+    elif text == 'Syllabus Report': return await view_syllabus(update, context)
+    elif text == 'Stop Reminders': return await stop_plan(update, context)
+    elif text == 'Manage Syllabus': user_data["current_state"] = "NORMAL"; return await update.message.reply_text("📚 সিলেবাস ম্যানেজ করো:", reply_markup=get_syllabus_keyboard())
+    elif text == 'Back to Main Menu': user_data["current_state"] = "NORMAL"; return await update.message.reply_text("🔙 মেইন মেনু", reply_markup=get_main_keyboard())
     
-    elif text == 'Add New Lecture': 
-        user_data["current_state"] = "WAITING_FOR_ADD"
-        return await update.message.reply_text("➕ কোন লেকচার অ্যাড?")
-    elif text == 'Mark Class Done': 
-        user_data["current_state"] = "WAITING_FOR_CLASS"
-        return await update.message.reply_text("📺 ক্লাস কমপ্লিট?")
-    elif text == 'Mark Note Done': 
-        user_data["current_state"] = "WAITING_FOR_NOTE"
-        return await update.message.reply_text("📝 নোট কমপ্লিট?")
-    elif text == 'Mark Practice Done': 
-        user_data["current_state"] = "WAITING_FOR_PRACTICE"
-        return await update.message.reply_text("🎯 প্র্যাকটিস কমপ্লিট?")
-    elif text == 'Mark Exam Done': 
-        user_data["current_state"] = "WAITING_FOR_EXAM"
-        return await update.message.reply_text("🏆 এক্সাম কমপ্লিট?")
+    elif text == 'Add New Lecture': user_data["current_state"] = "WAITING_FOR_ADD"; return await update.message.reply_text("➕ কোন লেকচার অ্যাড?")
+    elif text == 'Mark Class Done': user_data["current_state"] = "WAITING_FOR_CLASS"; return await update.message.reply_text("📺 ক্লাস কমপ্লিট?")
+    elif text == 'Mark Note Done': user_data["current_state"] = "WAITING_FOR_NOTE"; return await update.message.reply_text("📝 নোট কমপ্লিট?")
+    elif text == 'Mark Practice Done': user_data["current_state"] = "WAITING_FOR_PRACTICE"; return await update.message.reply_text("🎯 প্র্যাকটিস কমপ্লিট?")
+    elif text == 'Mark Exam Done': user_data["current_state"] = "WAITING_FOR_EXAM"; return await update.message.reply_text("🏆 এক্সাম কমপ্লিট?")
 
     if state == "WAITING_FOR_TARGET":
-        user_data["daily_target_raw"] = text
-        user_data["current_state"] = "NORMAL"
+        user_data["daily_target_raw"] = text; user_data["current_state"] = "NORMAL"
         save_target_to_sheet()
         for job in context.job_queue.get_jobs_by_name("hourly_tracker"): job.schedule_removal()
         context.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
         sys_prompt = SYSTEM_PROMPT.format(current_time=get_bd_time().strftime("%I:%M %p"), daily_target_raw=text, kaizen_goals=user_data["kaizen_goals"], context_reason="User set target. Motivate them.")
-        reply = generate_openrouter_chat(sys_prompt, f"Set target: {text}", 0.7)
-        try:
-            return await update.message.reply_text(reply, parse_mode="Markdown", reply_markup=get_main_keyboard())
-        except Exception:
-            return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
+        return await update.message.reply_text(generate_openrouter_chat(sys_prompt, f"Set target: {text}", 0.7), parse_mode="Markdown", reply_markup=get_main_keyboard())
 
     elif state == "WAITING_FOR_ADD":
         sub, ch, lecs = extract_lecture_details(text)
@@ -408,8 +364,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             key = f"{sub}_{ch}_{lec}"
             if key not in user_syllabus:
                 user_syllabus[key] = {"class": "Pending", "note": "Pending", "practice": "Pending", "exam": "Pending"}
-                save_single_lecture_to_sheet(key)
-                added = True
+                save_single_lecture_to_sheet(key); added = True
         user_data["current_state"] = "NORMAL"
         return await update.message.reply_text("✅ যোগ করা হয়েছে!" if added else "⚠️ আগেই আছে।", reply_markup=get_main_keyboard())
 
@@ -420,22 +375,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for lec in lecs:
             key = f"{sub}_{ch}_{lec}"
             if key in user_syllabus:
-                user_syllabus[key][task] = "Done"
-                save_single_lecture_to_sheet(key)
-                updated = True
+                user_syllabus[key][task] = "Done"; save_single_lecture_to_sheet(key); updated = True
         user_data["current_state"] = "NORMAL"
         return await update.message.reply_text("✅ আপডেট ডান!" if updated else "❌ লেকচার খুঁজে পাইনি।", reply_markup=get_main_keyboard())
 
     # --- Normal Chat (Contextual AI Mentor) ---
     sys_prompt = SYSTEM_PROMPT.format(current_time=get_bd_time().strftime("%I:%M %p"), daily_target_raw=user_data["daily_target_raw"], kaizen_goals=user_data["kaizen_goals"], context_reason="Respond naturally. Guide them.")
-    reply_text = generate_openrouter_chat(sys_prompt, text, 0.7)
-    
-    try:
-        # AI-এর রেসপন্সে ভুল মার্কডাউন ফর্মেটিং থাকলে যাতে ক্র্যাশ না করে সে জন্য ট্রাই-ক্যাচ ব্লক
-        await update.message.reply_text(reply_text, parse_mode="Markdown")
-    except Exception:
-        # ফলব্যাক: মার্কডাউন ফেইল করলে সাধারণ টেক্সট হিসেবে পাঠানো
-        await update.message.reply_text(reply_text)
+    await update.message.reply_text(generate_openrouter_chat(sys_prompt, text, 0.7), parse_mode="Markdown")
 
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
@@ -443,8 +389,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     for cmd, func in [("start", start), ("status", start), ("report", view_syllabus), ("stop_plan", stop_plan), ("test_remind", test_hourly_command)]: app.add_handler(CommandHandler(cmd, func))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("✅ Jeetu Bhaiya AI V2 (Stable Release) is Running!")
+    print("✅ Jeetu Bhaiya AI V2 (Final Release) is Running!")
     app.run_polling()
 
-if __name__ == '__main__': 
-    main()
+if __name__ == '__main__': main()
