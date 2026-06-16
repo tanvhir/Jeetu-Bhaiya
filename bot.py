@@ -83,7 +83,6 @@ CHAPTER_NAMES = {
     "M1_C9": "অন্তরীকরণ",
     "M1_C10": "যোগজীকরণ",
 
-
     # Mathematics 2nd Paper
     "M2_C1": "বাস্তব সংখ্যা ও অসমতা",
     "M2_C2": "বহুপদী ও বহুপদী সমীকরণ",
@@ -247,7 +246,9 @@ async def generate_premium_status():
             msg += f"{SUBJECT_ICONS[sk]} **{SUBJECT_NAMES[sk]}:** `{create_progress_bar(prog)}`\n"
             msg += f"Lecture: `{d['c']}/{d['tot']}`\nNote: `{d['n']}/{d['tot']}`\nPractice: `{d['p']}/{d['tot']}`\nExam: `{d['e']}/{d['tot']}`\n\n"
             
-    msg += f"━━━━━━━━━━━━━━━━━━━\n↳ **আজকের টার্গেটঃ** {user_data['daily_target_raw']}"
+    msg += f"━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"↳ **আজকের টার্গেটঃ** {user_data['daily_target_raw']}\n"
+    msg += f"↳ **কাইজেন গোলঃ** {user_data['kaizen_goals']}"
     return msg
 
 async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -274,7 +275,7 @@ async def view_syllabus(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msg += f"  ↳ {lec}: 📺{'🟢' if s.get('class')=='Done' else '🔴'} 📝{'🟢' if s.get('note')=='Done' else '🔴'} 🎯{'🟢' if s.get('practice')=='Done' else '🔴'} 🏆{'🟢' if s.get('exam')=='Done' else '🔴'}\n"
             msg += "\n"
     msg += "*(সূচক: 📺=Class, 📝=Note, 🎯=Practice, 🏆=Exam)*"
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 def run_dummy_server():
     HTTPServer(('', int(os.environ.get("PORT", 8080))), SimpleHTTPRequestHandler).serve_forever()
@@ -302,7 +303,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "শুধু পড়াশোনা না, আমার সাথে চ্যাট করে তোর লাইফস্টাইল (যেমন: স্লিপ সাইকেল, রুটিন) গোল সেট করতে পারিস। আমি মানুষের মতো গাইড করবো।\n\n"
         "নিচের মেনু থেকে তোর কাজ শুরু কর। লেটস গো! 🚀"
     )
-    await update.message.reply_text(msg, reply_markup=get_main_keyboard())
+    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 async def stop_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
