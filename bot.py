@@ -17,7 +17,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # API Keys & Configurations
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("GEMINI_API_KEY")
 if OPENROUTER_API_KEY:
-    OPENROUTER_API_KEY = OPENROUTER_API_KEY.strip('"\' ') # কি-এর দুইপাশের কোটেশন বা স্পেস ক্লিন করার জন্য
+    OPENROUTER_API_KEY = OPENROUTER_API_KEY.strip('"\' ') 
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")
@@ -90,9 +90,10 @@ def save_memory_to_sheet():
     try: requests.post(APPS_SCRIPT_URL, json={"chat_id": str(ALLOWED_CHAT_ID), "memory_update": True, "chat_history": user_data["chat_history"], "kaizen_goals": user_data["kaizen_goals"]}, timeout=10)
     except Exception: pass
 
-def save_target_to_sheet(status="Pending"):
+# V8 - is_new লজিক প্যারামিটার ফিক্সড
+def save_target_to_sheet(status="Pending", is_new=False):
     if not APPS_SCRIPT_URL: return
-    try: requests.post(APPS_SCRIPT_URL, json={"chat_id": str(ALLOWED_CHAT_ID), "target_update": True, "target": user_data["daily_target_raw"], "target_status": status}, timeout=10)
+    try: requests.post(APPS_SCRIPT_URL, json={"chat_id": str(ALLOWED_CHAT_ID), "target_update": True, "target": user_data["daily_target_raw"], "target_status": status, "is_new": is_new}, timeout=10)
     except Exception: pass
 
 def post_lecture_to_sheet(ch_key, lec_num, status="Pending"):
@@ -157,15 +158,14 @@ def get_live_summary_context():
     else:
         return f"ইউজার এখনো সিলেবাসে কোনো লেকচার অ্যাড করেনি এবং সে আজ '{user_data['daily_target_raw']}' মিশন সেট করেছে।"
 
-# --- Adaptive OpenRouter Interceptor with Failsafe Auto-Failover (V7.1) ---
+# --- Adaptive OpenRouter Interceptor with Explicit Chat Diagnosis (V8) ---
 def generate_openrouter_chat(user_message: str, context_reason: str = "Respond organically as a mentor.") -> str:
     if not OPENROUTER_API_KEY: 
-        logging.error("❌ OpenRouter API Key is missing!")
         return "API Key Missing!"
     
     dynamic_context = get_live_summary_context()
     
-    # safe prompt formatter
+    # safe prompt formatter (Failsafe replacement preserved)
     try:
         system_prompt = SYSTEM_PROMPT_BASE.format(
             current_time=get_bd_time().strftime("%I:%M %p"),
@@ -175,23 +175,24 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "Respond o
             dynamic_summary_context=dynamic_context
         )
     except Exception as fe:
-        logging.error(f"Prompt formatting failed: {fe}. Falling back to safe string replacement.")
+        logging.error(f"Prompt formatting failed: {fe}. Falling back to safe replacement.")
         system_prompt = SYSTEM_PROMPT_BASE.replace("{current_time}", get_bd_time().strftime("%I:%M %p")) \
                                             .replace("{daily_target_raw}", str(user_data["daily_target_raw"])) \
                                             .replace("{kaizen_goals}", str(user_data["kaizen_goals"])) \
                                             .replace("{kaizen_logs_raw}", json.dumps(user_data["kaizen_logs"][:4])) \
                                             .replace("{dynamic_summary_context}", str(dynamic_context))
 
-    # Dynamic temperature & tag injections
+    # Dynamic tag injections
     temp = 0.7
     if context_reason == "PARSING_TARGET_UPDATE":
         system_prompt += "\n\nSTRICT ACTION RULE:\nEvaluate if user succeeded, half-done or failed. End your reply with this tag EXACTLY:\n<TARGET_PARSE>Done or Half Done or Failed</TARGET_PARSE>"
         temp = 0.3
     elif context_reason == "PARSING_KAIZEN_LOG":
-        system_prompt += "\n\nSTRICT ACTION RULE:\nEvaluate their habit success. End your reply with this tag EXACTLY:\n<KAIZEN_LOG>goal_name|SUCCESS or FAILURE|Brief 2-3 words note in Bengali</KAIZEN_LOG>"
+        system_prompt += "\n\nSTRICT ACTION RULE:\nEvaluate their LIFESTYLE habit success (strictly lifestyle habits like exercise, sleep, routine). Do not evaluate academic lectures here.\nEnd your reply with this tag EXACTLY:\n<KAIZEN_LOG>goal_name|SUCCESS or FAILURE|Brief 2-3 words note in Bengali</KAIZEN_LOG>"
         temp = 0.3
     elif context_reason == "PARSING_KAIZEN_SET":
-        system_prompt += "\n\nSTRICT ACTION RULE:\nFinalize their new goal. End your reply with this tag EXACTLY:\n<KAIZEN_UPDATE>Summarized new active goals in Bengali</KAIZEN_UPDATE>"
+        # V8: কাইজেন মেমরিতে স্টাডি ডাটা পলিউশন ঠেকাতে কঠোর নির্দেশনা যুক্ত করা হয়েছে
+        system_prompt += "\n\nSTRICT ACTION RULE:\nFinalize their new LIFESTYLE/HABIT goal (strictly lifestyle habits like sleep time, exercise, diet, routine).\nDO NOT include academic study targets, lectures, or syllabus chapters in this tag! Study missions are daily targets, NOT long-term lifestyle habits.\nEnd your reply with this tag EXACTLY:\n<KAIZEN_UPDATE>Summarized new active LIFESTYLE goals in Bengali (strictly exclude study targets/lectures)</KAIZEN_UPDATE>"
         temp = 0.3
 
     # Clean history dictionary to guarantee strict API compatibility
@@ -202,65 +203,59 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "Respond o
 
     messages = [{"role": "system", "content": system_prompt}] + clean_history + [{"role": "user", "content": user_message}]
 
-    # 🚀 Sequential Failover Models: primary fumbles -> fallback runs!
-    models_to_try = [
-        OPENROUTER_MODEL,  # "google/gemma-4-31b-it:free" (Primary)
-        "google/gemma-2-9b-it:free", # (Fast Backup)
-        "meta-llama/llama-3-8b-instruct:free", # (Reliable Llama Backup)
-        "openrouter/free" # (Load-balanced auto router)
-    ]
-    
-    for model_name in models_to_try:
-        try:
-            logging.info(f"⚡ Requesting model: {model_name} (Temp: {temp})")
-            res = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
-                json={"model": model_name, "messages": messages, "temperature": temp},
-                timeout=20
-            )
+    # V8: কোনো সাইলেন্ট ফেইলওভার ফ্রি মডেল ট্রাই করবে না, শুধুমাত্র Gemma 4 এ স্টিক থাকবে
+    try:
+        logging.info(f"⚡ Requesting OpenRouter via: {OPENROUTER_MODEL} (Temp: {temp})")
+        res = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+            json={"model": OPENROUTER_MODEL, "messages": messages, "temperature": temp},
+            timeout=25
+        )
+        
+        if res.status_code == 200:
+            bot_reply = res.json()["choices"][0]["message"]["content"]
             
-            if res.status_code == 200:
-                bot_reply = res.json()["choices"][0]["message"]["content"]
-                
-                # Regex parsers
-                match_up = re.search(r"<KAIZEN_UPDATE>(.*?)</KAIZEN_UPDATE>", bot_reply, re.IGNORECASE | re.DOTALL)
-                if match_up:
-                    user_data["kaizen_goals"] = match_up.group(1).strip()
-                    bot_reply = re.sub(r"<KAIZEN_UPDATE>.*?</KAIZEN_UPDATE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
-                
-                match_log = re.search(r"<KAIZEN_LOG>(.*?)</KAIZEN_LOG>", bot_reply, re.IGNORECASE | re.DOTALL)
-                if match_log:
-                    try:
-                        parts = match_log.group(1).strip().split("|")
-                        if len(parts) >= 3: 
-                            threading.Thread(target=log_kaizen_to_sheet, args=(parts[0], parts[1], parts[2]), daemon=True).start()
-                    except Exception: pass
-                    bot_reply = re.sub(r"<KAIZEN_LOG>.*?</KAIZEN_LOG>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
-
-                match_tgt = re.search(r"<TARGET_PARSE>(.*?)</TARGET_PARSE>", bot_reply, re.IGNORECASE | re.DOTALL)
-                if match_tgt:
-                    parsed_status = match_tgt.group(1).strip()
-                    if parsed_status in ["Done", "Completed"]: 
-                        user_data["daily_target_raw"] = "No target set yet. (কালকের মিশন সফল! 🔥)"
-                    threading.Thread(target=save_target_to_sheet, args=(parsed_status,), daemon=True).start()
-                    bot_reply = re.sub(r"<TARGET_PARSE>.*?</TARGET_PARSE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
-
-                # Cleanup and return
-                bot_reply = bot_reply.replace("**", "").replace("#", "").strip()
-                
-                user_data["chat_history"].extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": bot_reply}])
-                if len(user_data["chat_history"]) > MAX_HISTORY_LENGTH: 
-                    user_data["chat_history"] = user_data["chat_history"][-MAX_HISTORY_LENGTH:]
-                
-                threading.Thread(target=save_memory_to_sheet, daemon=True).start()
-                return bot_reply
-            else:
-                logging.error(f"❌ Model {model_name} failed with status {res.status_code}: {res.text}")
-        except Exception as e:
-            logging.error(f"⚠️ Connection error for {model_name}: {e}")
+            # Regex parsers
+            match_up = re.search(r"<KAIZEN_UPDATE>(.*?)</KAIZEN_UPDATE>", bot_reply, re.IGNORECASE | re.DOTALL)
+            if match_up:
+                user_data["kaizen_goals"] = match_up.group(1).strip()
+                bot_reply = re.sub(r"<KAIZEN_UPDATE>.*?</KAIZEN_UPDATE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
             
-    return "নেটওয়ার্ক ড্রপ খাইছে ভাই! ওপেনরাউটার সার্ভার ডাউন বা রিকোয়েস্ট রেট-লিমিট খাইছে। আবার একটু বল তো।"
+            match_log = re.search(r"<KAIZEN_LOG>(.*?)</KAIZEN_LOG>", bot_reply, re.IGNORECASE | re.DOTALL)
+            if match_log:
+                try:
+                    parts = match_log.group(1).strip().split("|")
+                    if len(parts) >= 3: 
+                        threading.Thread(target=log_kaizen_to_sheet, args=(parts[0], parts[1], parts[2]), daemon=True).start()
+                except Exception: pass
+                bot_reply = re.sub(r"<KAIZEN_LOG>.*?</KAIZEN_LOG>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
+
+            match_tgt = re.search(r"<TARGET_PARSE>(.*?)</TARGET_PARSE>", bot_reply, re.IGNORECASE | re.DOTALL)
+            if match_tgt:
+                parsed_status = match_tgt.group(1).strip()
+                if parsed_status in ["Done", "Completed"]: 
+                    user_data["daily_target_raw"] = "No target set yet. (কালকের মিশন সফল! 🔥)"
+                # V8: আংশিক আপডেটের জন্য is_new=False পাঠানো হচ্ছে
+                threading.Thread(target=save_target_to_sheet, args=(parsed_status, False), daemon=True).start()
+                bot_reply = re.sub(r"<TARGET_PARSE>.*?</TARGET_PARSE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
+
+            bot_reply = bot_reply.replace("**", "").replace("#", "").strip()
+            
+            user_data["chat_history"].extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": bot_reply}])
+            if len(user_data["chat_history"]) > MAX_HISTORY_LENGTH: 
+                user_data["chat_history"] = user_data["chat_history"][-MAX_HISTORY_LENGTH:]
+            
+            threading.Thread(target=save_memory_to_sheet, daemon=True).start()
+            return bot_reply
+        else:
+            logging.error(f"❌ OpenRouter failed with status {res.status_code}: {res.text}")
+            # V8: এরর আসলে চ্যাটে ডায়াগনস্টিক ডিটেইলস দেখাবে
+            return f"নেটওয়ার্ক ড্রপ খাইছে ভাই! ওপেনরাউটার এরর কোড: {res.status_code}। এরর ডিটেইলস: {res.text[:120]}"
+            
+    except Exception as e:
+        logging.error(f"⚠️ Connection error: {e}")
+        return f"নেটওয়ার্ক ড্রপ খাইছে ভাই! পাইথন এরর: {str(e)[:120]}"
 
 # --- Dashboard formatters ---
 def create_progress_bar(percentage):
@@ -381,7 +376,7 @@ def get_syllabus_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     user_data["current_state"] = "NORMAL"
-    msg = "কিরে ভাই, আমি তোর মেন্টর জিতু ভাইয়া। V7 স্টেবল মাস্টার এডিশন সাকসেসফুলি রানিং! কাজ শুরু কর।"
+    msg = "কিরে ভাই, আমি তোর মেন্টর জিতু ভাইয়া। V8 প্রফেশনাল মাস্টার এডিশন সাকসেসফুলি রানিং! কাজ শুরু কর।"
     await update.message.reply_text(msg, reply_markup=get_main_keyboard())
 
 async def chapters_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -405,7 +400,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     state = user_data["current_state"]
 
-    # --- ১. গ্লোবাল মেনু নেভিগেশন (যেকোনো স্টেটে থাকলেও কাজ করবে) ---
+    # --- ১. গ্লোবাল মেনু নেভিগেশন ---
     if text == 'Check Status': 
         return await update.message.reply_text(await generate_premium_status())
     elif text == 'Syllabus Report': 
@@ -430,7 +425,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["current_state"] = "WAITING_FOR_KAIZEN_UPDATE"
         return await update.message.reply_text("কালকের কাইজেন গোলের অবস্থা বল, সফল নাকি ব্যর্থ? কী হয়েছিল খুলে বল।")
 
-    # --- ২. সাব-মেনু কমান্ডস (ইউজার যখন STATE_SYLLABUS_MENU তে থাকবে) ---
+    # --- ২. সাব-মেনু কমান্ডস ---
     elif text == 'Add New Lecture': 
         user_data["current_state"] = "WAITING_FOR_ADD"
         return await update.message.reply_text("কোন লেকচারটা অ্যাড করতে চাস বল? রেঞ্জও দিতে পারিস (যেমন: P1 C2 L1 বা P1 C2 L1-10)")
@@ -455,7 +450,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state == "WAITING_FOR_TARGET":
         user_data["daily_target_raw"] = text
         user_data["current_state"] = "NORMAL"
-        save_target_to_sheet("Pending")
+        # V8: নতুন টার্গেট হিসেবে is_new=True পাঠানো হচ্ছে
+        save_target_to_sheet("Pending", is_new=True)
         reply = generate_openrouter_chat(f"User set daily target: {text}", "User has set a daily target.")
         return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
 
@@ -466,7 +462,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif state == "WAITING_FOR_KAIZEN":
         user_data["current_state"] = "NORMAL"
-        reply = generate_openrouter_chat(f"New Goal Setup: {text}", "PARSING_KAIZEN_SET")
+        reply = generate_openrouter_chat(f"New Lifestyle Habit: {text}", "PARSING_KAIZEN_SET")
         return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
 
     elif state == "WAITING_FOR_KAIZEN_UPDATE":
@@ -474,7 +470,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = generate_openrouter_chat(text, "PARSING_KAIZEN_LOG")
         return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
 
-    # --- ৫. সিলেবাস সাব-মেনু ডাটা রাইটিং (সফল প্রসেস শেষে স্টেট ফিরে যাবে STATE_SYLLABUS_MENU তে) ---
+    # --- ৫. সিলেবাস সাব-মেনু ডাটা রাইটিং ---
     elif state == "WAITING_FOR_ADD":
         mode, ch_key, lec_info = parse_smart_shortcode(text)
         if not ch_key: 
@@ -559,7 +555,7 @@ def main():
     if app.job_queue: 
         app.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
     
-    print("✅ Jeetu Bhaiya AI V7 (Stable Blueprint Edition with 7.1 Booster) Running Successfully!")
+    print("✅ Jeetu Bhaiya AI V8 (Production Stable Edition) Running Successfully!")
     app.run_polling()
 
 if __name__ == '__main__': 
