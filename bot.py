@@ -267,46 +267,10 @@ def parse_smart_shortcode(text):
     return "CHAPTER", ch_key, None
 
 # ==========================================
-# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10 - RAW SYLLABUS & DYNAMIC RECON)
+# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10 - RAW SYLLABUS & RETRY-FALLBACK)
 # ==========================================
-def generate_raw_syllabus_report_text():
-    """এআই এর রিয়াল-টাইম ডিসিশন মেকিংয়ের জন্য সম্পূর্ণ র-সিলবাস ট্রি জেনারেটর"""
-    if not user_chapters and not user_lectures:
-        return "সিলেবাসে কোনো ডেটা নেই।"
-    
-    tree = {"P": {}, "C": {}, "M": {}, "B": {}}
-    for ck, info in sorted(user_chapters.items()):
-        sk = ck.split("_")[0][0]
-        if sk in tree: 
-            tree[sk][ck] = {"info": info, "lecs": []}
-        
-    for lk, info in sorted(user_lectures.items()):
-        parts = lk.split("_")
-        ck = parts[0] + "_" + parts[1]
-        sk = parts[0][0]
-        status = info.get("status") if isinstance(info, dict) else info
-        if sk in tree and ck in tree[sk]:
-            tree[sk][ck]["lecs"].append((parts[2], status))
-            
-    msg = "Detailed Syllabus Report\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    for sk in ["P", "C", "M", "B"]:
-        if tree[sk]:
-            msg += f" {SUBJECT_NAMES[sk]}\n\n"
-            for ck, obj in tree[sk].items():
-                ch_name = CHAPTER_NAMES.get(ck, ck)
-                info = obj["info"]
-                msg += f"📁 {ch_name} ({ck.split('_')[1]}) -> [Progress: {info.get('progress','0/0')}]\n"
-                msg += f"  ├── Note: {info.get('note','Pending')} | Practice: {info.get('practice','Pending')} | Exam: {info.get('exam','Pending')}\n"
-                msg += "  └── Lectures:\n"
-                for idx, (l_num, stat) in enumerate(obj["lecs"]):
-                    connector = "└──" if idx == len(obj["lecs"]) - 1 else "├──"
-                    msg += f"      {connector} {l_num} ── {'Class Done' if stat=='Done' else 'Pending'}\n"
-                msg += "\n"
-    return msg
-
 def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") -> tuple:
+    import time  # রিট্রাইয়ের মাঝে বিরতির জন্য লোকাল ইমপোর্ট
     global client
     if not client:
         if GEMINI_API_KEY:
@@ -368,21 +332,55 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
         "parts": [{"text": user_message}]
     })
 
-    try:
-        logging.info(f"⚡ Requesting Google AI Studio via: {GEMINI_MODEL} (Temp: {temp})")
-        
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=formatted_contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=temp
-            )
-        )
-        
-        bot_reply = response.text
-        if not bot_reply: raise ValueError("Empty response received from Gemini.")
+    bot_reply = None
+    max_retries = 3
+    retry_delay = 1.0  # সেকেন্ড
+    
+    # এপিআই রিট্রাই এবং প্রোডাকশন ফলব্যাক লজিক
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"⚡ Requesting Google AI Studio via: {GEMINI_MODEL} (Attempt {attempt+1}/{max_retries}, Temp: {temp})")
             
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=formatted_contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=temp
+                )
+            )
+            
+            bot_reply = response.text
+            if bot_reply:
+                break
+            else:
+                raise ValueError("Empty response received from API.")
+                
+        except Exception as e:
+            logging.warning(f"⚠️ Attempt {attempt+1} failed with error: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff retry
+            else:
+                # ৩ বার রিট্রাই ফেইল করলে ব্যাকগ্রাউন্ডে gemini-3.1-flash-lite এ ফলব্যাক করা হবে
+                FALLBACK_MODEL = "gemini-3.1-flash-lite"
+                logging.info(f"🔄 Switching to fallback production model: {FALLBACK_MODEL}")
+                try:
+                    response = client.models.generate_content(
+                        model=FALLBACK_MODEL,
+                        contents=formatted_contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=temp
+                        )
+                    )
+                    bot_reply = response.text
+                    if bot_reply:
+                        break
+                except Exception as fallback_err:
+                    logging.error(f"❌ Fallback model also failed: {fallback_err}")
+                    return f"নেটওয়ার্ক ড্রপ খাইছে ভাই! গুগল এআই এরর: {str(e)[:120]}", None
+
+    try:
         # XML ট্যাগ পার্সিং এবং ডাটাবেজ আপডেট
         match_up = re.search(r"<KAIZEN_UPDATE>(.*?)</KAIZEN_UPDATE>", bot_reply, re.IGNORECASE | re.DOTALL)
         if match_up:
@@ -410,7 +408,6 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             if parsed_status in ["Done", "Completed"]: 
                 user_data["daily_target_raw"] = "No target set yet. (কালকের মিশন সফল! 🔥)"
             threading.Thread(target=save_target_to_sheet, args=(parsed_status, False), daemon=True).start()
-            # এখানে o.DOTALL পরিবর্তন করে re.DOTALL করা হয়েছে (BUG FIX)
             bot_reply = re.sub(r"<TARGET_PARSE>.*?</TARGET_PARSE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
 
         match_new_tgt = re.search(r"<UPDATE_TARGET>(.*?)</UPDATE_TARGET>", bot_reply, re.IGNORECASE | re.DOTALL)
@@ -449,6 +446,7 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
     except Exception as e:
         logging.error(f"⚠️ API Exception: {e}")
         return f"নেটওয়ার্ক ড্রপ খাইছে ভাই! গুগল এআই এরর: {str(e)[:120]}", None
+    
 
 # ==========================================
 # BLOCK 6: DASHBOARDS & REPORTS
