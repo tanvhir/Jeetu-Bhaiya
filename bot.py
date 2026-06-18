@@ -267,7 +267,7 @@ def parse_smart_shortcode(text):
     return "CHAPTER", ch_key, None
 
 # ==========================================
-# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10 - RAW SYLLABUS & RETRY-FALLBACK)
+# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10 - TIMEOUT, RETRY & FALLBACK)
 # ==========================================
 def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") -> tuple:
     import time  # রিট্রাইয়ের মাঝে বিরতির জন্য লোকাল ইমপোর্ট
@@ -346,7 +346,9 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
                 contents=formatted_contents,
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    temperature=temp
+                    temperature=temp,
+                    # ২০ সেকেন্ডের টাইমআউট যুক্ত করা হলো (ঝুলে থাকা প্রতিরোধ করতে)
+                    http_options=types.HttpOptions(timeout=20000)
                 )
             )
             
@@ -370,7 +372,9 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
                         contents=formatted_contents,
                         config=types.GenerateContentConfig(
                             system_instruction=system_prompt,
-                            temperature=temp
+                            temperature=temp,
+                            # ফলব্যাক মডেলেও ২০ সেকেন্ডের টাইমআউট প্রটেকশন
+                            http_options=types.HttpOptions(timeout=20000)
                         )
                     )
                     bot_reply = response.text
@@ -445,7 +449,7 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             
     except Exception as e:
         logging.error(f"⚠️ API Exception: {e}")
-        return f"নেটওয়ার্ক ড্রপ খাইছে ভাই! গুগল এআই এরর: {str(e)[:120]}", None
+        return f"নেটওয়ার্ক ড্রপ খাইছে ভাই! গুগল এআই এরর: {str(e)
     
 
 # ==========================================
