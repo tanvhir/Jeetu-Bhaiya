@@ -37,15 +37,15 @@ if GEMINI_API_KEY:
     except Exception as e:
         logging.error(f"Failed to initialize Google GenAI client: {e}")
 
-# Memory State Machine - V10
+# Memory State Machine - V10 (Fixed)
 user_data = {
     "daily_target_raw": "No target set yet.",
-    "current_state": "NORMAL", # STATES: NORMAL, STATE_SYLLABUS_MENU, MORNING_CHECKIN, PLANNING_MODE, PLANNING_LONG_TERM, WAITING_FOR_TARGET_UPDATE, WAITING_FOR_KAIZEN, WAITING_FOR_KAIZEN_UPDATE, WAITING_FOR_ADD, WAITING_FOR_CLASS, WAITING_FOR_NOTE, WAITING_FOR_PRACTICE, WAITING_FOR_EXAM
+    "current_state": "NORMAL", 
     "chat_history": [],
     "kaizen_goals": "কোনো কাইজেন প্ল্যান সেট করা হয়নি।",
     "long_term_plan": "কোনো দীর্ঘমেয়াদী প্ল্যান সেট করা হয়নি।",
     "kaizen_logs": [],
-    "last_interaction_date": ""  # দিনের প্রথম মেসেজ ডিটেক্ট করার জন্য
+    "last_interaction_date": ""  
 }
 MAX_HISTORY_LENGTH = 12
 
@@ -65,12 +65,12 @@ CHAPTER_NAMES = {
     "P2_C8": "আধুনিক পদার্থবিজ্ঞানের সূচনা", "P2_C9": "পরমাণুর মডেল ও নিউক্লিয়ার পদার্থবিজ্ঞান", "P2_C10": "সেমিকন্ডাক্টর ও ইলেকট্রনিক্স", "P2_C11": "জ্যোতির্বিজ্ঞান",
 
     # 🧪 CHEMISTRY (C1 & C2)
-    "C1_C1": "ল্যাবরেটরির নিরাপদ ব্যবহার", "C1_C2": "গুনগত রসায়ন", "C1_C3": "মৌলের পর্যায়বৃত্ত ধর্ম ও রাসায়নিক বন্ধন", "C1_C4": "রাসায়নিক পরিবর্তন", "C1_C5": "কর্মমুখী রসায়ন",
+    "C1_C1": "ল্যাবরেটরির নিরাপদ ব্যবহার", "C1_C2": "গুনগত রসায়ন", "C1_C3": "মৌলের পর্যায়বৃত্ত ধর্ম ও রাসায়নিক বন্ধন", "C1_C4": "রাসায়নিক পরিবর্তন", "C1_C5": "कर्मমুখী রসায়ন",
     "C2_C1": "পরিবেশ রসায়ন", "C2_C2": "জৈব রসায়ন", "C2_C3": "পরিমাণগত রসায়ন", "C2_C4": "তড়িৎ রসায়ন", "C2_C5": "অর্থনৈতিক রসায়ন",
 
     # 📐 MATH (M1 & M2)
     "M1_C1": "ম্যাট্রিক্স ও নির্ণায়ক", "M1_C2": "সরলরেখা", "M1_C3": "বৃত্ত", "M1_C4": "বিন্যাস ও সমাবেশ", "M1_C5": "ত্রিকোণমিতিক অনুপাত",
-    "M1_C6": "সংযুক্ত কোণের ত্রিকোণমিতিক অনুপাত", "M1_C7": "ফাংশন ও ফাংশনের লেখচিত্র", "M1_C8": "বিপরীত ত্রিকোণমিতিক ফাংশন", "M1_C9": "অন্তরীকরণ", "M1_C10": "যোগজীকরণ",
+    "M1_C6": "সংযুক্ত কোণের ত্রিকোণমিতিক অনুপাত", "M1_C7": "ফাংশন ও ফাংশনের লেখচিত্র", "M1_C8": "বিপরীত ত্রিকোণমিতিক ফাংশন", "M1_C9": "অন্টারীকরণ", "M1_C10": "যোগজীকরণ",
     "M2_C1": "বাস্তব সংখ্যা ও অসমতা", "M2_C2": "বহুপদী ও বহুপদী সমীকরণ", "M2_C3": "জটিল সংখ্যা", "M2_C4": "বিপরীত ত্রিকোণমিতিক ফাংশন ও ত্রিকোণমিতিক সমীকরণ",
     "M2_C5": "দ্বিপদী বিস্তৃতি", "M2_C6": "কণিক", "M2_C7": "স্থিতিবিদ্যা", "M2_C8": "সমতলে বস্তুকণার গতি", "M2_C9": "বিস্তার পরিমাপ ও সম্ভাবনা",
 
@@ -90,12 +90,10 @@ HELP_TEXT = """
 
 💡 লং-টার্ম প্ল্যানিং স্পেল:
 • /goal <আপনার বার্তা>
-(যেমন: /goal ভাইয়া অর্গানিক কেমিস্ট্রির ব্যাকলগ শেষ করতে চাই)
 👉 অ্যাকশন: সিলেবাসের সম্পূর্ণ র-ডেটা লোড হবে এবং ভাইয়ার সাথে দীর্ঘমেয়াদী রোডম্যাপ তৈরি হবে।
 
 📅 শর্ট-টার্ম/ডেইলি প্ল্যানিং স্পেল:
 • /plan <আপনার বার্তা>
-(যেমন: /plan আজকে ২টা লেকচার করব ২ ঘণ্টায়)
 👉 অ্যাকশন: সিলেবাস ও রিভিশন হিস্ট্রি লোড হবে এবং দিন/ঘণ্টা অনুযায়ী রুটিন সাজাবে।
 
 📊 স্ট্যাটাস ও ভিজ্যুয়াল রিপোর্ট স্পেল:
@@ -104,45 +102,38 @@ HELP_TEXT = """
 • /chapters : সিলেবাস কোড ডিকশনারি ম্যাপ দেখা। (যেমন: /chapters P দিলে শুধু ফিজিক্সের চ্যাপ্টার কোড দেখাবে)।
 
 ☕ ব্রেক ও ডাইনামিক টাইমার স্পেল:
-• /break <মিনিট> : নির্দিষ্ট সময় ব্রেক নেওয়া (যেমন: /break 15 দিলে ১৫ মিনিট পর ভাইয়া ডেকে আনবে)।
+• /break <মিনিট> : নির্দিষ্ট সময় ব্রেক নেওয়া।
 
 🔙 মেইন কিবোর্ডে ফিরে যেতে চাইলে চ্যাটে 'Back to Main Menu' বাটন চাপবি।
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
 # ==========================================
-# BLOCK 2: SYSTEM PROMPT ENGINE (V10 CASUAL/HUMAN PERSONA)
+# BLOCK 2: SYSTEM PROMPT ENGINE (V10 REAL PERSONA)
 # ==========================================
 SYSTEM_PROMPT_BASE = """
-You are 'Jeetu Bhaiya', an elite, deeply empathetic, hardcore, and practical personal AI Mentor for a Bangladeshi second-timer varsity admission candidate.
+You are 'Jeetu Bhaiya', the legendary older-brother mentor figure from Kota Factory. You are guiding Tanvir, a second-timer varsity admission candidate in Bangladesh who has no room for excuses or failures.
 
-CORE PROFILE INFO & CONTEXT:
-- Target Exam: Varsity Admission 2026.
-- User Status: Second Timer (Zero room for fake motivation, needs systematic planning).
-- Current Long-term Road-map: {long_term_plan}
-- User's Custom Kaizen Habits: {kaizen_goals}
-- Recent Kaizen History Logs: {kaizen_logs_raw}
-- Dynamic Study Summary: {dynamic_summary_context}
+YOUR UNIQUE PERSONA:
+1. Deeply empathetic but ruthlessly practical. You don't use fake sweet talk. You give bitter but real truth with warmth.
+2. Calm, wise, and grounded. Speak like an elder brother from Dhaka/academic circles. Use natural casual Bangladeshi Bengali (Informal words: 'তুই', 'ভাই', 'প্যারা', 'চিল', 'বাহানা', 'টেবিলে বস', 'পড়ালেখা').
+3. STRICT RULE ON DIALOGUE repetition: Never use catchphrases like "খেলা হবে" or "বাহানা বাদ দিবি" in every message. Only use them when Tanvir finishes a massive milestone or is caught making blatant, lazy excuses. Keep your tone dynamic, diverse, and human.
+4. Keep your replies concise and to-the-point (3-5 lines max) during casual conversations. Only write detailed lists/timelines when specifically in PLANNING or ROADMAP modes.
+5. Never use markdown formatting like asterisks (**) or hashes (#). Keep it completely raw and readable.
 
-DYNAMIC TEMPERAMENTS & RULES:
-1. Speak in NATURAL, CASUAL BANGLADESHI BENGALI (Use informal words like: 'তুই', 'ভাই', 'প্যারা', 'চিল', 'খেলা হবে', 'পড়ালেখা', 'বাহানা').
-2. NEVER use markdown formats like asterisks (**) or hashes (#). Keep it clean and human.
-3. Be short, direct and highly context-aware (3-5 lines max). No long essay lists unless in master planning mode.
-4. Adapt your mood based on user progress:
-   - If they are skipping targets/failing, show 'Tough Love' (be strict, say "বাহানা বাদ দিবি").
-   - If they are succeeding, show immense pride.
-   - If they feel down, become an emotional older brother ("প্যারা নাই ভাই, ঘুরে আয় একটু").
-
-CONTEXT WINDOW:
-- Current Bangladesh Time: {current_time}
-- Today's Target/Schedule: {daily_target_raw}
+CORE CONTEXT:
+- Today's Date & Time in BD: {current_time}
+- Active Daily Target: {daily_target_raw}
+- Kaizen Lifestyle Habits: {kaizen_goals}
+- Active Long-term Roadmap: {long_term_plan}
+- Current Backlog/Revision Summary: {dynamic_summary_context}
 """
 
 def get_bd_time():
     return datetime.datetime.utcnow() + datetime.timedelta(hours=6)
 
 # ==========================================
-# BLOCK 3: GOOGLE SHEETS API SYNC & CONNECTORS (V10 - MEMORY PROTECTED)
+# BLOCK 3: GOOGLE SHEETS API SYNC & CONNECTORS (V10)
 # ==========================================
 def save_memory_to_sheet():
     if not APPS_SCRIPT_URL: return
@@ -198,7 +189,6 @@ def load_from_google_sheet(sync_history=True):
                 user_data["kaizen_logs"] = data.get("kaizen_logs", [])
                 user_chapters = data.get("chapters", {})
                 user_lectures = data.get("lectures", {})
-                # বাটন ক্লিকে চলমান হিস্ট্রি যাতে ওভাররাইট না হয় তার সুরক্ষা
                 if sync_history:
                     user_data["chat_history"] = data.get("chat_history", [])
                 logging.info("✅ V10 Core Synchronization Complete.")
@@ -208,12 +198,10 @@ def load_from_google_sheet(sync_history=True):
 # BLOCK 4: REVISION & BACKLOG ANALYTICS (SPACED REPETITION)
 # ==========================================
 def calculate_revision_and_backlogs():
-    """১, ৩ ও ৭ দিন আগের শেষ করা পড়াগুলো চিহ্নিত করে রিভিশন অ্যালগরিদম সাজানো"""
     tot_lec = len(user_lectures)
     done_lec = sum(1 for v in user_lectures.values() if isinstance(v, dict) and v.get("status") == "Done")
     backlogs = tot_lec - done_lec
     
-    # স্পেসড রিভিশন চেক
     today_dt = get_bd_time().date()
     revision_needed = []
     
@@ -235,7 +223,6 @@ def calculate_revision_and_backlogs():
 def get_live_summary_context(context_reason="NORMAL"):
     backlogs, revs = calculate_revision_and_backlogs()
     
-    # প্ল্যানিং মোডে এআইকে সম্পূর্ণ র-সিলেবাস ডেটা পাঠিয়ে দেওয়া হচ্ছে
     if context_reason in ["PLANNING_MODE", "PLANNING_LONG_TERM"]:
         full_report = generate_raw_syllabus_report_text()
         summary = f"ইউজারের লাইভ র-সিলেবাস ডেটা রিপোর্ট:\n{full_report}\n"
@@ -244,12 +231,9 @@ def get_live_summary_context(context_reason="NORMAL"):
             summary += f"স্পেসড রিভিশনের জন্য ডিউ টপিকসমূহ: {', '.join(revs)}।"
         return summary
     else:
-        # সাধারণ চ্যাটের জন্য শুধু শর্ট সামারি টোকেন বাঁচাবে
-        summary = f"ব্যাকলগ লেকচার সংখ্যা: {backlogs}টি। "
+        summary = f"ব্যাকলগ লেকচার সংখ্যা: {backlogs}টি।"
         if revs:
-            summary += f"আজকে বৈজ্ঞানিক রিভিশনের জন্য উপযুক্ত টপিক: {', '.join(revs[:2])}।"
-        else:
-            summary += "নতুন কোনো রিভিশন ডিউ নেই।"
+            summary += f" স্পেসড রিভিশন ডিউ: {', '.join(revs[:2])}।"
         return summary
 
 def parse_smart_shortcode(text):
@@ -267,10 +251,9 @@ def parse_smart_shortcode(text):
     return "CHAPTER", ch_key, None
 
 # ==========================================
-# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10 - RAW SYLLABUS & DYNAMIC RECON)
+# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (NO-FOOTER SAVING)
 # ==========================================
 def generate_raw_syllabus_report_text():
-    """এআই এর রিয়াল-টাইম ডিসিশন মেকিংয়ের জন্য সম্পূর্ণ র-সিলবাস ট্রি জেনারেটর"""
     if not user_chapters and not user_lectures:
         return "সিলেবাসে কোনো ডেটা নেই।"
     
@@ -306,6 +289,23 @@ def generate_raw_syllabus_report_text():
                 msg += "\n"
     return msg
 
+def get_clean_footer(context_reason: str) -> str:
+    """মিনিমালিস্ট ও ক্লিন ফুটার জেনারেটর (ফোল্ডার ছাড়া অন্য ইমোজি রিমুভড)"""
+    footer = "\n\n📂 Context Attached:\n"
+    if context_reason in ["PLANNING_MODE", "PLANNING_LONG_TERM"]:
+        footer += "• Syllabus Progress: Detailed Raw Tree Attached\n"
+        if context_reason == "PLANNING_MODE":
+            footer += "• Revision History: Spaced Spaced Revision Loaded\n"
+    else:
+        footer += "• Syllabus Progress Summary Only\n"
+        
+    target_val = user_data.get('daily_target_raw', 'No target set yet.')
+    footer += f"• Active Target: {target_val}\n"
+    
+    has_roadmap = user_data.get('long_term_plan') and user_data['long_term_plan'] != "কোনো দীর্ঘমেয়াদী প্ল্যান সেট করা হয়নি।"
+    footer += f"• Long-term Roadmap: {'Active' if has_roadmap else 'None'}"
+    return footer
+
 def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") -> tuple:
     global client
     if not client:
@@ -314,7 +314,6 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             except Exception as e: return f"গুগল ক্লায়েন্ট এপিআই সংযোগ ত্রুটি: {str(e)[:120]}", None
         else: return "API Key Missing!", None
     
-    # কন্টেক্সট অনুযায়ী র-ডেটা অথবা শর্ট সামারি ডাইনামিকালি লোড হবে
     dynamic_context = get_live_summary_context(context_reason)
     
     try:
@@ -327,7 +326,7 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             dynamic_summary_context=dynamic_context
         )
     except Exception as fe:
-        logging.error(f"Prompt formatting failed: {fe}. Falling back to safe replacement.")
+        logging.error(f"Prompt formatting failed: {fe}")
         system_prompt = SYSTEM_PROMPT_BASE.replace("{current_time}", get_bd_time().strftime("%I:%M %p")) \
                                             .replace("{daily_target_raw}", str(user_data["daily_target_raw"])) \
                                             .replace("{kaizen_goals}", str(user_data["kaizen_goals"])) \
@@ -335,7 +334,6 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
                                             .replace("{kaizen_logs_raw}", json.dumps(user_data["kaizen_logs"][:4])) \
                                             .replace("{dynamic_summary_context}", str(dynamic_context))
 
-    # কন্টেক্সট ভিত্তিক রেসপন্স লেন্থ এবং ট্যাগ কন্ট্রোল (ডাইনামিক রেসপন্স লেন্থ)
     temp = 0.7
     if context_reason == "PLANNING_MODE":
         system_prompt += "\n\nSTRICT PLANNING RULE:\nতুমি এখন প্ল্যানিং সেশনে আছ। ৩-৫ লাইনের লিমিটেশন ভুলে যাও এবং ইউজারকে সময় ভাগ করে দিয়ে বিস্তারিত হিসাব ও শিডিউল কষে দাও। পরিকল্পনা ফাইনাল হলে এই ট্যাগটি দাও:\n<UPDATE_TARGET>সময় অনুযায়ী সাজানো সুন্দর প্ল্যানের সামারি</UPDATE_TARGET>"
@@ -353,7 +351,6 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
         system_prompt += "\n\nSTRICT ACTION RULE:\nFinalize active lifestyle habits. End your reply with this tag:\n<KAIZEN_UPDATE>Summarized lifestyle goals</KAIZEN_UPDATE>"
         temp = 0.3
 
-    # মেমোরি স্ট্রাকচার ম্যাপিং
     formatted_contents = []
     for msg in user_data["chat_history"]:
         if isinstance(msg, dict) and "role" in msg and "content" in msg:
@@ -381,9 +378,9 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
         )
         
         bot_reply = response.text
-        if not bot_reply: raise ValueError("Empty response received from Gemini.")
+        if not bot_reply: raise ValueError("Empty response received.")
             
-        # XML ট্যাগ পার্সিং এবং ডাটাবেজ আপডেট
+        # XML ট্যাগ পার্সিং ও ডাটাবেজ প্রসেসিং
         match_up = re.search(r"<KAIZEN_UPDATE>(.*?)</KAIZEN_UPDATE>", bot_reply, re.IGNORECASE | re.DOTALL)
         if match_up:
             user_data["kaizen_goals"] = match_up.group(1).strip()
@@ -410,7 +407,6 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             if parsed_status in ["Done", "Completed"]: 
                 user_data["daily_target_raw"] = "No target set yet. (কালকের মিশন সফল! 🔥)"
             threading.Thread(target=save_target_to_sheet, args=(parsed_status, False), daemon=True).start()
-            # এখানে o.DOTALL পরিবর্তন করে re.DOTALL করা হয়েছে (BUG FIX)
             bot_reply = re.sub(r"<TARGET_PARSE>.*?</TARGET_PARSE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
 
         match_new_tgt = re.search(r"<UPDATE_TARGET>(.*?)</UPDATE_TARGET>", bot_reply, re.IGNORECASE | re.DOTALL)
@@ -420,25 +416,13 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             threading.Thread(target=save_target_to_sheet, args=("Pending", True), daemon=True).start()
             bot_reply = re.sub(r"<UPDATE_TARGET>.*?</UPDATE_TARGET>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
 
-        # সময়ের রিমাইন্ডার ডিটেক্টর
         match_rem = re.search(r"<SET_REMINDER>(\d+)</SET_REMINDER>", bot_reply, re.IGNORECASE)
         if match_rem:
             bot_reply = re.sub(r"<SET_REMINDER>\d+</SET_REMINDER>", "", bot_reply, flags=re.IGNORECASE).strip()
 
-        # মেটাডেটা ফুটার সংযুক্তি (কনটেক্সট এটাচমেন্ট ইন্ডিকেটর)
-        footer = "\n\n📂 Context Attached:\n"
-        if context_reason in ["PLANNING_MODE", "PLANNING_LONG_TERM"]:
-            footer += "• 📊 Detailed Syllabus Data (Raw Tree Attached)\n"
-            if context_reason == "PLANNING_MODE":
-                footer += "• 🔄 Spaced Revision History Loaded\n"
-        else:
-            footer += "• 📈 Syllabus Progress Summary Only\n"
-        footer += f"• 🎯 Active Target: {user_data['daily_target_raw']}\n"
-        footer += f"• 🚀 Long-term Roadmap: {'Active' if user_data['long_term_plan'] != 'কোনো দীর্ঘমেয়াদী প্ল্যান সেট করা হয়নি।' else 'None'}"
-        
-        bot_reply += footer
         bot_reply = bot_reply.replace("**", "").replace("#", "").strip()
         
+        # ⚠️ ফিক্স: মেমোরি হিস্ট্রিতে শুধু পিওর বট রিপ্লাই থাকবে, এক্সটার্নাল ফুটার কখনোই হিস্ট্রিতে সেভ হবে না!
         user_data["chat_history"].extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": bot_reply}])
         if len(user_data["chat_history"]) > MAX_HISTORY_LENGTH: 
             user_data["chat_history"] = user_data["chat_history"][-MAX_HISTORY_LENGTH:]
@@ -572,7 +556,7 @@ def get_syllabus_keyboard():
     ], resize_keyboard=True)
 
 # ==========================================
-# BLOCK 8: MESSAGE PROCESSOR & STATE CONTROLLER (V10 - DYNAMIC SPELL ROUTED)
+# BLOCK 8: MESSAGE PROCESSOR & STATE CONTROLLER
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
@@ -594,7 +578,6 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await view_syllabus_tree(update, context)
 
 async def scheduled_reminder_callback(context: ContextTypes.DEFAULT_TYPE):
-    """ডাইনামিক রিমাইন্ডারের ওয়ান-টাইম ফলো-আপ ট্রিগার"""
     job = context.job
     try:
         await context.bot.send_message(chat_id=job.chat_id, text="কিরে! ব্রেক শেষ বলছিলি না? সময় শেষ, চল এবার জলদি পড়ার টেবিলে ফেরা যাক।")
@@ -605,27 +588,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     text = update.message.text.strip()
     state = user_data["current_state"]
+    today_str = get_bd_time().strftime("%Y-%m-%d")
 
-    # --- ১. স্পেল/কমান্ড ডিটেক্টর ইঞ্জিন (Natural Language Command Trigger) ---
+    # --- ১. স্পেল/কমান্ড ডিটেক্টর ইঞ্জিন ---
     if text.startswith("/goal"):
         user_msg = text[5:].strip()
         if not user_msg:
             return await update.message.reply_text("💡 ভাই, /goal স্পেলের সাথে আপনার রোডম্যাপের বার্তাটি দিন। যেমন: /goal ভাইয়া একটা মাস্টার প্ল্যান দাও")
         user_data["current_state"] = "PLANNING_LONG_TERM"
+        user_data["last_interaction_date"] = today_str # সাইলেন্টলি ফার্স্ট ইন্টারেকশন আপডেট করা হল
         load_from_google_sheet(sync_history=False)
         reply, _ = generate_openrouter_chat(user_msg, "PLANNING_LONG_TERM")
-        return await update.message.reply_text(reply)
+        footer = get_clean_footer("PLANNING_LONG_TERM")
+        return await update.message.reply_text(reply + footer)
         
     elif text.startswith("/plan"):
         user_msg = text[5:].strip()
         if not user_msg:
             return await update.message.reply_text("📅 ভাই, /plan স্পেলের সাথে আপনার মেসেজটি দিন। যেমন: /plan আজকে ২টা লেকচার শেষ করব")
         user_data["current_state"] = "PLANNING_MODE"
+        user_data["last_interaction_date"] = today_str # সাইলেন্টলি ফার্স্ট ইন্টারেকশন আপডেট করা হল
         load_from_google_sheet(sync_history=False)
         reply, rem_time = generate_openrouter_chat(user_msg, "PLANNING_MODE")
         if rem_time and context.job_queue:
             context.job_queue.run_once(scheduled_reminder_callback, when=int(rem_time)*60, chat_id=update.effective_chat.id)
-        return await update.message.reply_text(reply)
+        footer = get_clean_footer("PLANNING_MODE")
+        return await update.message.reply_text(reply + footer)
         
     elif text.startswith("/break"):
         parts = text.split()
@@ -637,20 +625,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             return await update.message.reply_text("⚠️ ভুল ফরম্যাট! সঠিক ফরম্যাট: /break 15 (১৫ মিনিটের ব্রেক)")
 
-    # --- ২. সকালের ফাস্ট মেসেজ ডিটেকশন (সম্পূর্ণ ডাইনামিক ও এআই-ভিত্তিক গ্রিটিং) ---
-    today_str = get_bd_time().strftime("%Y-%m-%d")
-    if user_data["last_interaction_date"] != today_str:
-        user_data["last_interaction_date"] = today_str
-        # প্রথম মেসেজেই এআই নিজে থেকে বাংলা গ্রিটিং জেনারেট করবে যা হিস্ট্রিতেও সেভ থাকবে
-        reply, rem_time = generate_openrouter_chat("[SYSTEM_ALERT: This is the user's first interaction today. Greet them warmly and casually in Bengali, ask if they are ready/fresh, and encourage them to use the /plan spell or click 'Planning Mode' to schedule today's mission.]", "NORMAL")
-        if rem_time and context.job_queue:
-            context.job_queue.run_once(scheduled_reminder_callback, when=int(rem_time)*60, chat_id=update.effective_chat.id)
-        return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
-
-    # --- ৩. গ্লোবাল মেনু বাটন নেভিগেশন ---
+    # --- ২. গ্লোবাল মেনু বাটন নেভিগেশন (এগুলা সরাসরি এক্সিকিউট হবে, কোনো হাইজ্যাক ছাড়া) ---
     if text == 'Check Status': 
+        user_data["last_interaction_date"] = today_str # সাইলেন্টলি ফার্স্ট ইন্টারেকশন ডেট লক করে দেওয়া হলো যেন আর পপ-আপ না হয়
         return await update.message.reply_text(await generate_premium_status())
     elif text == 'Syllabus Report': 
+        user_data["last_interaction_date"] = today_str
         return await view_syllabus_tree(update, context)
     elif text == 'Manage Syllabus': 
         user_data["current_state"] = "STATE_SYLLABUS_MENU"
@@ -661,14 +641,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif text == 'প্লানিং মোড': 
         user_data["current_state"] = "PLANNING_MODE"
-        # সিলেবাস সিঙ্ক হবে কিন্তু রানিং চ্যাট হিস্ট্রি মুছে যাবে না (sync_history=False)
+        user_data["last_interaction_date"] = today_str
         load_from_google_sheet(sync_history=False)
         msg = "তুই এখন প্লানিং মোডে আছিস। ভাইয়ার কাছে তোর পুরো সিলেবাস রিপোর্ট রেডি আছে। বল আজকে কি কি কাভার করবি আর কোনটার পেছনে কতক্ষণ সময় দিবি?"
         return await update.message.reply_text(msg)
         
     elif text == 'লং-টার্ম গোল সেট':
         user_data["current_state"] = "PLANNING_LONG_TERM"
-        # সিলেবাস সিঙ্ক হবে কিন্তু রানিং চ্যাট হিস্ট্রি মুছে যাবে না (sync_history=False)
+        user_data["last_interaction_date"] = today_str
         load_from_google_sheet(sync_history=False)
         msg = "চল একটা স্ট্রং লং-টার্ম রোডম্যাপ সাজাই। তোর কোচিংয়ের বর্তমান অবস্থা কি আর কবে নাগাদ ব্যাকলগ শেষ করে ট্র্যাকে ফিরতে চাস বুঝিয়ে বল ভাইয়াকে।"
         return await update.message.reply_text(msg)
@@ -683,7 +663,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["current_state"] = "WAITING_FOR_KAIZEN_UPDATE"
         return await update.message.reply_text("কালকের কাইজেন গোলটা পারলি নাকি ভেস্তে গেল?")
 
-    # --- ৪. সাব-মেনু কমান্ডস ---
+    # --- ৩. সাব-মেনু কমান্ডস ---
     elif text == 'Add New Lecture': 
         user_data["current_state"] = "WAITING_FOR_ADD"
         return await update.message.reply_text("কোন লেকচারটা অ্যাড করতে চাস বল? (যেমন: P1 C2 L1 বা P1 C2 L1-10)")
@@ -703,35 +683,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state == "STATE_SYLLABUS_MENU":
         return await update.message.reply_text("সিলেবাস বাটনগুলো ব্যবহার কর অথবা 'Back to Main Menu' ক্লিক কর।", reply_markup=get_syllabus_keyboard())
 
-    # --- ৫. আইসোলেটেড স্টেট ট্র্যাপ এবং সাব-স্টেট প্রসেসিং ---
+    # --- ৪. আইসোলেটেড স্টেট ট্র্যাপ এবং সাব-স্টেট প্রসেসিং ---
     if state == "PLANNING_MODE":
         reply, rem_time = generate_openrouter_chat(text, "PLANNING_MODE")
         if rem_time and context.job_queue:
             context.job_queue.run_once(scheduled_reminder_callback, when=int(rem_time)*60, chat_id=update.effective_chat.id)
-        return await update.message.reply_text(reply)
+        footer = get_clean_footer("PLANNING_MODE")
+        return await update.message.reply_text(reply + footer)
 
     elif state == "PLANNING_LONG_TERM":
         reply, _ = generate_openrouter_chat(text, "PLANNING_LONG_TERM")
-        return await update.message.reply_text(reply)
+        footer = get_clean_footer("PLANNING_LONG_TERM")
+        return await update.message.reply_text(reply + footer)
 
     elif state == "WAITING_FOR_TARGET_UPDATE":
         user_data["current_state"] = "NORMAL"
         reply, _ = generate_openrouter_chat(text, "PARSING_TARGET_UPDATE")
-        return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
+        footer = get_clean_footer("NORMAL")
+        return await update.message.reply_text(reply + footer, reply_markup=get_main_keyboard())
 
     elif state == "WAITING_FOR_KAIZEN":
         user_data["current_state"] = "NORMAL"
         reply, _ = generate_openrouter_chat(f"New Lifestyle Habit: {text}", "PARSING_KAIZEN_SET")
-        return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
+        footer = get_clean_footer("NORMAL")
+        return await update.message.reply_text(reply + footer, reply_markup=get_main_keyboard())
 
     elif state == "WAITING_FOR_KAIZEN_UPDATE":
         user_data["current_state"] = "NORMAL"
         reply, _ = generate_openrouter_chat(text, "PARSING_KAIZEN_LOG")
-        return await update.message.reply_text(reply, reply_markup=get_main_keyboard())
+        footer = get_clean_footer("NORMAL")
+        return await update.message.reply_text(reply + footer, reply_markup=get_main_keyboard())
 
-    # --- ৬. সিলেবাস ইন-মেমোরি প্রসেসর (বাল্ক মাল্টিপল ইনপুট কাস্টম নেম সহ) ---
+    # --- ৫. সিলেবাস ইন-মেমোরি প্রসেসর ---
     elif state == "WAITING_FOR_ADD":
-        # লাইন ব্রেক অনুযায়ী ইনপুটগুলোকে আলাদা করা হচ্ছে
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         success_count = 0
         success_messages = []
@@ -743,9 +727,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 errors.append(f"'{line}' -> কোড সঠিক নয়")
                 continue
             
-            # চ্যাপ্টারের বাংলা নাম ডিকশনারি থেকে বের করা হচ্ছে, না থাকলে কোডটাই দেখাবে
             ch_name = CHAPTER_NAMES.get(ch_key, ch_key)
-            
             if ch_key not in user_chapters: 
                 user_chapters[ch_key] = {"progress": "0/0", "note": "Pending", "practice": "Pending", "exam": "Pending"}
             
@@ -769,7 +751,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_msg = "বাল্ক লেকচার অ্যাড প্রক্রিয়া সম্পন্ন হয়েছে!\n\n"
         if success_messages:
             reply_msg += "✅ সফলভাবে যুক্ত করা টাস্কসমূহ:\n" + "\n".join([f"  • {m}" for m in success_messages])
-            
         if errors:
             reply_msg += f"\n\n❌ কিছু লাইনে সমস্যা দেখা গেছে:\n" + "\n".join([f"  • {e}" for e in errors])
             
@@ -804,26 +785,53 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data["current_state"] = "STATE_SYLLABUS_MENU"
         return await update.message.reply_text(f"চ্যাপ্টারের {task.capitalize()} সফলভাবে ডান মার্ক করা হয়েছে!", reply_markup=get_syllabus_keyboard())
 
+    # --- ৬. সকালের ফার্স্ট মেসেজ ডিটেকশন (কেবলমাত্র সাধারণ ক্যাজুয়াল চ্যাটের ক্ষেত্রে প্রযোজ্য) ---
+    if user_data["last_interaction_date"] != today_str:
+        user_data["last_interaction_date"] = today_str
+        
+        # সময়ের ওপর ভিত্তি করে ডাইনামিক রিয়েল-টাইম গ্রিটিং সিস্টেম
+        bd_now = get_bd_time()
+        current_hour = bd_now.hour
+        if 5 <= current_hour < 12:
+            time_label = "সকাল (Morning)"
+        elif 12 <= current_hour < 16:
+            time_label = "দুপুর (Afternoon)"
+        elif 16 <= current_hour < 19:
+            time_label = "বিকাল (Evening)"
+        elif 19 <= current_hour < 23:
+            time_label = "রাত (Night)"
+        else:
+            time_label = "গভীর রাত (Late Night)"
+            
+        system_trigger_msg = f"[SYSTEM_ALERT: This is Tanvir's first interaction of the day. The current time is {bd_now.strftime('%I:%M %p')} - label: {time_label}. Greet him organically and warmly. Ask how he is feeling at this time and guide him to use /plan spell or click Planning Mode to schedule his goals. Remember to stay in Jeetu Bhaiya's natural persona.]"
+        
+        reply, rem_time = generate_openrouter_chat(system_trigger_msg, "NORMAL")
+        if rem_time and context.job_queue:
+            context.job_queue.run_once(scheduled_reminder_callback, when=int(rem_time)*60, chat_id=update.effective_chat.id)
+        footer = get_clean_footer("NORMAL")
+        return await update.message.reply_text(reply + footer, reply_markup=get_main_keyboard())
+
     # --- ৭. ক্যাজুয়াল নরমাল চ্যাট হ্যান্ডলিং ---
     reply, rem_time = generate_openrouter_chat(text, "NORMAL")
     if rem_time and context.job_queue:
         context.job_queue.run_once(scheduled_reminder_callback, when=int(rem_time)*60, chat_id=update.effective_chat.id)
-    await update.message.reply_text(reply)
+    footer = get_clean_footer("NORMAL")
+    await update.message.reply_text(reply + footer)
 
 # ===================================================
 # BLOCK 9: HOURLY CHECK-INS & SPECIAL COMMANDS (V9.1)
 # ===================================================
 async def hourly_mentor_check(context: ContextTypes.DEFAULT_TYPE):
-    """বোরিং চেক রিপ্লেসমেন্ট: শুধু কাজের টাইম স্লট বা ডেটাবেজ চেক ট্র্যাকিং"""
     if user_data["daily_target_raw"] == "No target set yet." or "successful" in user_data["daily_target_raw"].lower(): 
         return
     current_hour = get_bd_time().hour
-    if current_hour >= 0 and current_hour < 7: # গভীর রাতে খোঁচা দেবে না
+    if current_hour >= 0 and current_hour < 7: 
         return
     
     reply, _ = generate_openrouter_chat("[SYSTEM_TRIGGER: HOURLY SCHEDULE CHECK]", "NORMAL")
+    footer = get_clean_footer("NORMAL")
     try: 
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=reply)
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=reply + footer)
     except Exception: pass
 
 def chapter_sort_key(item):
@@ -837,10 +845,7 @@ def chapter_sort_key(item):
 async def chapters_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
     
-    # ইউজার কোনো প্যারামিটার দিয়েছে কি না চেক করি (যেমন: P, C, M, B)
     filter_arg = context.args[0].upper() if context.args else None
-    
-    # ইনপুট ভ্যালিডেশন
     if filter_arg and filter_arg not in ["P", "C", "M", "B"]:
         await update.message.reply_text("ভুল সাবজেক্ট কোড! শুধু P (Physics), C (Chemistry), M (Math), বা B (Biology) ব্যবহার কর ভাই।")
         return
@@ -848,10 +853,9 @@ async def chapters_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📖 সিলেবাস কোড ডিকশনারী ম্যাপ\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     current_sub = ""
     for k, v in sorted(CHAPTER_NAMES.items(), key=chapter_sort_key):
-        sub_prefix = k.split("_")[0] # e.g., P1, C2, M1
-        sub_letter = sub_prefix[0]   # e.g., P, C, M, B
+        sub_prefix = k.split("_")[0] 
+        sub_letter = sub_prefix[0]   
         
-        # ফিল্টার আর্গুমেন্ট থাকলে শুধু ম্যাচিং বিষয়ের চ্যাপ্টারগুলো দেখাবে
         if filter_arg and sub_letter != filter_arg:
             continue
             
@@ -870,23 +874,21 @@ def run_dummy_server():
 
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    # স্টার্টআপের সময় সম্পূর্ণ ডাটাবেজ ও হিস্ট্রি একবার ফুল সিঙ্ক করা হবে (sync_history=True)
     load_from_google_sheet(sync_history=True)
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # কমান্ড হ্যান্ডলার রেজিস্ট্রেশন
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))  # /help কমান্ড রেজিস্টার করা হলো
-    app.add_handler(CommandHandler("status", status_command))  # /status কমান্ড রেজিস্টার করা হলো
-    app.add_handler(CommandHandler("report", report_command))  # /report কমান্ড রেজিস্টার করা হলো
-    app.add_handler(CommandHandler("chapters", chapters_command))  # /chapters কমান্ড রেজিস্টার করা হলো
+    app.add_handler(CommandHandler("help", help_command))  
+    app.add_handler(CommandHandler("status", status_command))  
+    app.add_handler(CommandHandler("report", report_command))  
+    app.add_handler(CommandHandler("chapters", chapters_command))  
     
-    # মেসেজ হ্যান্ডলার রেজিস্ট্রেশন (~filters.COMMAND ফিল্টারটি উঠিয়ে নেওয়া হয়েছে যাতে /goal বা /plan চ্যাটে টাইপ করলে handle_message এ এসে সচল হয়)
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     if app.job_queue: 
         app.job_queue.run_repeating(hourly_mentor_check, interval=3600, first=3600, name="hourly_tracker")
     
-    print("✅ Jeetu Bhaiya AI V10 (Production Final Engine) successfully initiated on background threads!")
+    print("✅ Jeetu Bhaiya AI V10 successfully initiated on background threads!")
     app.run_polling()
 
 if __name__ == '__main__': 
