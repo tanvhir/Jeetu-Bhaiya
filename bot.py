@@ -197,6 +197,17 @@ def load_from_google_sheet(sync_history=True):
 # ==========================================
 # BLOCK 4: REVISION & BACKLOG ANALYTICS (SPACED REPETITION)
 # ==========================================
+def get_chapter_progress_bar(progress_str):
+    try:
+        # progress_str যদি "3/5" হয়, তাকে স্প্লিট করে হিসাব করা হচ্ছে
+        done, tot = map(int, progress_str.split("/"))
+        pct = (done / tot * 100) if tot > 0 else 0
+        filled = int(pct // 20) # ৫ টি ব্লকের স্কেল (প্রতি ব্লক ২০%)
+        bar = f"[{'■' * filled}{'□' * (5 - filled)}]"
+        return f"── {int(pct)}% {bar} ({done}/{tot})"
+    except Exception:
+        return f"── {progress_str}"
+
 def calculate_revision_and_backlogs():
     tot_lec = len(user_lectures)
     done_lec = sum(1 for v in user_lectures.values() if isinstance(v, dict) and v.get("status") == "Done")
@@ -280,7 +291,9 @@ def generate_raw_syllabus_report_text():
             for ck, obj in tree[sk].items():
                 ch_name = CHAPTER_NAMES.get(ck, ck)
                 info = obj["info"]
-                msg += f"📁 {ch_name} ({ck.split('_')[1]}) -> [Progress: {info.get('progress','0/0')}]\n"
+                # আপডেট করা নতুন লাইন:
+                prog_display = get_chapter_progress_bar(info.get('progress', '0/0'))
+                msg += f"📁 {ch_name} ({ck.split('_')[1]}) {prog_display}\n"
                 msg += f"  ├── Note: {info.get('note','Pending')} | Practice: {info.get('practice','Pending')} | Exam: {info.get('exam','Pending')}\n"
                 msg += "  └── Lectures:\n"
                 for idx, (l_num, stat) in enumerate(obj["lecs"]):
@@ -526,7 +539,9 @@ async def view_syllabus_tree(update: Update, context: ContextTypes.DEFAULT_TYPE,
             for ck, obj in tree[sk].items():
                 ch_name = CHAPTER_NAMES.get(ck, ck)
                 info = obj["info"]
-                msg += f"📁 {ch_name} ({ck.split('_')[1]}) -> [Progress: {info.get('progress','0/0')}]\n"
+                # আপডেট করা নতুন লাইন:
+                prog_display = get_chapter_progress_bar(info.get('progress', '0/0'))
+                msg += f"📁 {ch_name} ({ck.split('_')[1]}) {prog_display}\n"
                 msg += f"  ├── Note: {info.get('note','Pending')} | Practice: {info.get('practice','Pending')} | Exam: {info.get('exam','Pending')}\n"
                 msg += "  └── Lectures:\n"
                 for idx, (l_num, stat) in enumerate(obj["lecs"]):
@@ -575,7 +590,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
-    await view_syllabus_tree(update, context)
+    # চ্যাট থেকে আর্গুমেন্ট (যেমন: P, C, M, B) রিড করা হচ্ছে
+    filter_arg = context.args[0].upper() if context.args else None
+    
+    # ইনপুট ভ্যালিডেশন
+    if filter_arg and filter_arg not in ["P", "C", "M", "B"]:
+        return await update.message.reply_text("ভুল সাবজেক্ট কোড! শুধু P (Physics), C (Chemistry), M (Math), বা B (Biology) ব্যবহার কর ভাই।")
+        
+    await view_syllabus_tree(update, context, filter_arg)
 
 async def scheduled_reminder_callback(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
