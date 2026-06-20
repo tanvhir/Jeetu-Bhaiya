@@ -303,7 +303,7 @@ def parse_smart_shortcode(text):
     return "CHAPTER", ch_key, None
 
 # ==========================================
-# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10.1 Reminder Fixed)
+# BLOCK 5: ADAPTIVE GOOGLE GENAI COGNITIVE PIPELINE (V10.1 Pure AI-in-the-Loop)
 # ==========================================
 def generate_raw_syllabus_report_text():
     if not user_chapters and not user_lectures:
@@ -388,13 +388,15 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
 
     temp = 0.7
     if context_reason == "PLANNING_MODE":
+        # /plan কমান্ডে কোনো গুগল শিট রাইট পারমিশন নেই (নো মেমরি এডিটিং ট্যাগস)
         system_prompt += "\n\nSTRICT PLANNING MODE RULE:\n" \
-                         "তোর এখন গুগল শিটে টার্গেট যোগ করার বা পরিবর্তন করার কোনো ক্ষমতা নেই। তুমি কেবল তানভীরের সাথে আলোচনা করে সুন্দরভাবে পড়াশোনার প্ল্যান সাজিয়ে দিবি। টার্গেটের ডাটাবেজ নিয়ে কোনো ট্যাগ (যেমন <SET_TARGET>, <TARGET_PARSE>, <UPDATE_TARGET>) এখানে তৈরি করবি না। তানভীরের সাথে টার্গেট চূড়ান্ত হলে তাকে বলবি: 'টার্গেট লক করতে চাইলে /target [final target text] লিখে দে ভাই।'"
+                         "তোর এখন গুগল শিটে টার্গেট যোগ করার বা পরিবর্তন করার কোনো ক্ষমতা নেই। তুই কেবল তানভীরের সাথে আলোচনা করে সুন্দরভাবে পড়াশোনার প্ল্যান সাজিয়ে দিবি। টার্গেটের ডাটাবেজ নিয়ে কোনো ট্যাগ (যেমন <SET_TARGET>, <TARGET_PARSE>, <UPDATE_TARGET>) এখানে তৈরি করবি না। তানভীরের সাথে টার্গেট চূড়ান্ত হলে তাকে বলবি: 'টার্গেট লক করতে চাইলে /target [final target text] লিখে দে ভাই।'"
         temp = 0.3
     elif context_reason == "PLANNING_LONG_TERM":
         system_prompt += "\n\nSTRICT LONG TERM PLANNING RULE:\nতুমি এখন লং-টার্ম রোডম্যাপ সেশনে আছ। মেসেজের শেষে এই ট্যাগটি দাও:\n<UPDATE_LONG_TERM>লং-টার্ম প্ল্যানের সংক্ষিপ্ত সামারি</UPDATE_LONG_TERM>"
         temp = 0.3
     elif context_reason == "PARSING_CUSTOM_TARGET":
+        # /target কমান্ডের স্পেসিফিকেশন: নতুন সেট অথবা ভুল সংশোধন (ইন-প্লেস ওভাররাইট)
         system_prompt += "\n\nSTRICT TARGET SETTING RULES:\n" \
                          "1. If Tanvir is correcting a mistake in his active target, complained about duplicate entries, or is correcting Jeetu Bhaiya's misunderstanding, end your reply with this tag EXACTLY:\n" \
                          "<OVERWRITE_TARGET>Corrected Target Description Text|ভুল সংশোধন</OVERWRITE_TARGET>\n" \
@@ -402,6 +404,7 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
                          "<SET_TARGET>Summarized Target Description</SET_TARGET>"
         temp = 0.3
     elif context_reason == "PARSING_TARGET_UPDATE":
+        # /tupdate কমান্ডের স্পেসিফিকেশন: শুধু একটিভ টার্গেট আপডেট (নো নিউ রো ক্রিয়েশন)
         system_prompt += "\n\nSTRICT PROGRESS UPDATE RULES:\n" \
                          "Tanvir has sent a progress update regarding his current target. Analyze if he completed it (Done), partially did it (Half Done), or failed. DO NOT set or modify any description text. You must ONLY output this tag EXACTLY:\n" \
                          "<TARGET_PARSE>Done or Half Done or Failed|২-৩ শব্দের বাংলা নোট/রিমার্কস</TARGET_PARSE>"
@@ -411,6 +414,16 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
         temp = 0.3
     elif context_reason == "PARSING_KAIZEN_SET":
         system_prompt += "\n\nSTRICT ACTION RULE:\nFinalize active lifestyle habits. End your reply with this tag:\n<KAIZEN_UPDATE>Summarized lifestyle goals</KAIZEN_UPDATE>"
+        temp = 0.3
+    elif context_reason == "PARSING_REMINDER":
+        system_prompt += "\n\nSTRICT REMINDER SETTING RULES:\n" \
+                         "Identify the time duration (in minutes) and the purpose of the reminder from Tanvir's text. " \
+                         "You must calculate the relative minutes. For example, if he says '1 hour', duration is 60. " \
+                         "If he says '2 hours' or '২ ঘণ্টা', duration is 120. " \
+                         "If he mentions a specific time like 'রাত ১১টা' (11:00 PM), check the current BD time ({current_time}) and calculate remaining minutes until that time. " \
+                         "Always output this tag EXACTLY at the end of your response:\n" \
+                         "<SET_REMINDER>minutes|Brief reminder message in Bengali reminding him of his current study status or break end</SET_REMINDER>" \
+                         "\nNever miss the tag if Tanvir has requested a break or set a time goal."
         temp = 0.3
 
     compressed_history = []
@@ -444,8 +457,23 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
         
         bot_reply = response.text
         if not bot_reply: raise ValueError("Empty response received.")
+
+        match_rem = re.search(r"<SET_REMINDER>(.*?)</SET_REMINDER>", bot_reply, re.IGNORECASE | re.DOTALL)
+        reminder_data = None
+        if match_rem:
+            try:
+                payload = match_rem.group(1).strip()
+                if "|" in payload:
+                    mins_str, r_msg = payload.split("|", 1)
+                    reminder_data = {
+                        "minutes": int(mins_str.strip()),
+                        "message": r_msg.strip()
+                    }
+            except Exception as ex:
+                logging.error(f"Error parsing reminder tag: {ex}")
+            bot_reply = re.sub(r"<SET_REMINDER>.*?</SET_REMINDER>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
             
-        # V10.1 Smart Overwrite Feature Integration
+        # V10.1 Pure Command Interceptor Engine
         match_overwrite = re.search(r"<OVERWRITE_TARGET>(.*?)</OVERWRITE_TARGET>", bot_reply, re.IGNORECASE | re.DOTALL)
         if match_overwrite:
             payload = match_overwrite.group(1).strip()
@@ -497,13 +525,9 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             if status in ["Done", "Completed"]: 
                 user_data["daily_target_raw"] = "No target set yet. (কালকের মিশন সফল! 🔥)"
             
+            # This is an update, is_new is STRICTLY False!
             threading.Thread(target=save_target_to_sheet, args=(status, False, remarks), daemon=True).start()
             bot_reply = re.sub(r"<TARGET_PARSE>.*?</TARGET_PARSE>", "", bot_reply, flags=re.IGNORECASE | re.DOTALL).strip()
-
-        # V10.1 Smart Reminder Tag Extractor
-        match_rem = re.search(r"<SET_REMINDER>(\d+)</SET_REMINDER>", bot_reply, re.IGNORECASE)
-        if match_rem:
-            bot_reply = re.sub(r"<SET_REMINDER>\d+</SET_REMINDER>", "", bot_reply, flags=re.IGNORECASE).strip()
 
         bot_reply = bot_reply.replace("**", "").replace("#", "").strip()
         
@@ -512,9 +536,7 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             user_data["chat_history"] = user_data["chat_history"][-MAX_HISTORY_LENGTH:]
         
         threading.Thread(target=save_memory_to_sheet, daemon=True).start()
-        
-        # 🎯 ফিক্সড: জেমিনি থেকে পাওয়া রিমাইন্ডার মিনিট পাইথন ইঞ্জিনে ফেরত পাঠানো হচ্ছে
-        return bot_reply, match_rem.group(1) if match_rem else None
+        return bot_reply, reminder_data
             
     except Exception as e:
         logging.error(f"⚠️ API Network Exception: {e}")
@@ -683,7 +705,9 @@ async def show_chapters_list(update: Update, filter_arg=None):
 async def scheduled_reminder_callback(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     try:
-        await context.bot.send_message(chat_id=job.chat_id, text="কিরে! ব্রেক শেষ বলছিলি না? সময় শেষ, চল এবার জলদি পড়ার টেবিলে ফেরা যাক।")
+        # ডায়নামিক কাস্টম মেসেজ থাকলে তা ব্যবহার করবে, অন্যথায় ডিফল্ট মেসেজ দেখাবে
+        text = job.data if job.data else "কিরে! ব্রেক শেষ বলছিলি না? সময় শেষ, চল এবার জলদি পড়ার টেবিলে ফেরা যাক।"
+        await context.bot.send_message(chat_id=job.chat_id, text=text)
     except Exception as e:
         logging.error(f"Failed to send scheduler follow-up: {e}")
 
@@ -760,15 +784,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         footer = get_clean_footer("PLANNING_MODE")
         return await update.message.reply_text(reply + footer, reply_markup=get_remove_keyboard())
         
-    elif text.startswith("/break"):
-        parts = text.split()
-        if len(parts) > 1 and parts[1].isdigit():
-            minutes = int(parts[1])
+   elif text.startswith("/break"):
+        arg = text[6:].strip()
+        if not arg:
+            return await update.message.reply_text("💡 রিমাইন্ডার ব্যবহারের নিয়ম:\n`/break 15` (১৫ মিনিটের নরমাল ব্রেক)\n`/break ১০ মিনিট পর পড়তে বসব` (ডায়নামিক ব্রেক)\n`/break ২ ঘণ্টা পর লেকচার ১ এর আপডেট নিস` (কাস্টম পড়ার আপডেট)", reply_markup=get_remove_keyboard())
+        
+        # যদি ইউজার সরাসরি কেবল সংখ্যা টাইপ করে (যেমন: /break 15)
+        if arg.isdigit():
+            minutes = int(arg)
             if context.job_queue:
-                context.job_queue.run_once(scheduled_reminder_callback, when=minutes*60, chat_id=update.effective_chat.id)
+                context.job_queue.run_once(scheduled_reminder_callback, when=minutes*60, data="কিরে! ব্রেক শেষ বলছিলি না? সময় শেষ, চল এবার জলদি পড়ার টেবিলে ফেরা যাক।", chat_id=update.effective_chat.id)
             return await update.message.reply_text(f"☕ ঠিক আছে ভাই, যা একটু রিল্যাক্স কর। ঠিক {minutes} মিনিট পর আমি তোকে ডেকে পড়ার টেবিলে ফিরিয়ে আনব।", reply_markup=get_remove_keyboard())
-        else:
-            return await update.message.reply_text("⚠️ ভুল ফরম্যাট! সঠিক ফরম্যাট: `/break 15` (১৫ মিনিটের ব্রেক)")
+        
+        # যদি স্বাভাবিক বাংলা টেক্সট বা ডাইনামিক রিমাইন্ডার হয়, তবে এআই রাউটার অন হবে
+        reply, reminder_data = generate_openrouter_chat(arg, "PARSING_REMINDER")
+        if reminder_data and context.job_queue:
+            minutes = reminder_data["minutes"]
+            message = reminder_data["message"]
+            context.job_queue.run_once(scheduled_reminder_callback, when=minutes*60, data=message, chat_id=update.effective_chat.id)
+            logging.info(f"Dynamically scheduled reminder in {minutes} minutes with message: {message}")
+        
+        footer = get_clean_footer("NORMAL")
+        return await update.message.reply_text(reply + footer, reply_markup=get_remove_keyboard())
 
     # ==========================================
     # ২. কোর ইনফো স্পেলস (রাউটার লেভেল)
