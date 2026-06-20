@@ -675,7 +675,16 @@ async def scheduled_reminder_callback(context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ALLOWED_CHAT_ID: return
-    text = update.message.text.strip()
+    
+    raw_text = update.message.text.strip()
+    
+    # 🛡️ V10.1 Anti-Typo Normalization Shield (আন্ডারস্কোর ও নো-স্পেস টাইপো ফিক্স)
+    normalized_text = re.sub(r"^/target_update", "/target update", raw_text, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"^/targetupdate", "/target update", normalized_text, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"^/kaizen_update", "/kaizen update", normalized_text, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"^/kaizenupdate", "/kaizen update", normalized_text, flags=re.IGNORECASE)
+    
+    text = normalized_text
     state = user_data["current_state"]
     today_str = get_bd_time().strftime("%Y-%m-%d")
 
@@ -699,7 +708,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 return await update.message.reply_text("ভুল নাম্বার দিছিস তানভির! লিস্টে থাকা নাম্বারের মধ্যে একটা সিলেক্ট কর।")
         else:
-            user_data["current_state"] = "NORMAL" # নরমাল মোডে রিটার্ন
+            user_data["current_state"] = "NORMAL" # কোনো নাম্বার না দিলে নরমাল মোডে রিটার্ন
 
     # ==========================================
     # ১. লং-টার্ম এবং শর্ট-টার্ম প্ল্যানিং স্পেলস
@@ -771,13 +780,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text.startswith("/target update"):
         arg = text[14:].strip()
         if not arg:
-            return await update.message.reply_text("💡 স্পেল ব্যবহারের নিয়ম: `/target update ২টা ডান করছি ভাই`")
+            return await update.message.reply_text("💡 স্পেল ব্যবহারের নিয়ম: `/target update ২টা ডান করছি ভাই` (স্ল্যাশ মেনু থেকে /target সিলেক্ট করে একটা স্পেস দিয়ে update লিখে দিবি)")
         
-        # শিটে একাধিক টার্গেট পেন্ডিং আছে কি না চেক করার লজিক (নিউ লাইন বা কমা স্প্লিটার)
         raw_targets = [line.strip() for line in user_data["daily_target_raw"].split("\n") if line.strip() and "No target" not in line and "মিশন সফল" not in line]
         
         if len(raw_targets) > 1:
-            # V10.1 Multi-Target Selection Triggered
             user_data["current_state"] = "WAITING_FOR_TARGET_SELECTION"
             user_data["pending_update_text"] = arg
             user_data["pending_targets_list"] = raw_targets
@@ -787,7 +794,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 p_msg += f"{index}. {target_item}\n"
             return await update.message.reply_text(p_msg)
             
-        # সিঙ্গেল টার্গেট হলে নরমাল জেমিনি এভ্যালুয়েশন
         reply, _ = generate_openrouter_chat(f"Target Update Message: {arg}", "PARSING_TARGET_UPDATE")
         footer = get_clean_footer("NORMAL")
         return await update.message.reply_text(reply + footer, reply_markup=get_remove_keyboard())
@@ -805,18 +811,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_target_to_sheet(parsed_status, False, "ম্যানুয়াল আপডেট")
             return await update.message.reply_text(f"🎯 আজকের টার্গেট স্ট্যাটাস আপডেট করা হয়েছে: {parsed_status}", reply_markup=get_remove_keyboard())
         
-        # V10.1 AI-Powered Custom Target Creation
         reply, _ = generate_openrouter_chat(f"Set custom target: {arg}", "PARSING_CUSTOM_TARGET")
         footer = get_clean_footer("NORMAL")
         return await update.message.reply_text(reply + footer, reply_markup=get_remove_keyboard())
 
     # ==========================================
-    # ৩.১. কাইজেন লাইফস্টাইল স্পেলস (V10.1)
+    # ৩.১. কাইজেন লাইফস্টাইল স্পেলস
     # ==========================================
     elif text.startswith("/kaizen update"):
         arg = text[14:].strip()
         if not arg:
-            return await update.message.reply_text("💡 স্পেল ব্যবহারের নিয়ম: `/kaizen update ভাইয়া আজকে সকাল ৯টায় উঠছি`")
+            return await update.message.reply_text("💡 স্পেল ব্যবহারের নিয়ম: `/kaizen update ভাইয়া আজকে সকাল ৯টায় উঠছি` (স্ল্যাশ মেনু থেকে /kaizen সিলেক্ট করে একটা স্পেস দিয়ে update লিখে দিবি)")
         
         reply, _ = generate_openrouter_chat(f"Kaizen status update: {arg}", "PARSING_KAIZEN_LOG")
         footer = get_clean_footer("NORMAL")
@@ -832,7 +837,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(reply + footer, reply_markup=get_remove_keyboard())
 
     # ==========================================
-    # ৪. সিলেবাস ইনস্ট্যান্ট আপডেট স্পেলস (The Killer Features! - বাল্ক সাপোর্ট সহ)
+    # ৪. সিলেবাস ইনস্ট্যান্ট আপডেট স্পেলস
     # ==========================================
     elif text.startswith("/add"):
         raw_payload = text[4:].strip()
