@@ -537,20 +537,39 @@ def generate_openrouter_chat(user_message: str, context_reason: str = "NORMAL") 
             
     except Exception as e:
         logging.error(f"⚠️ API Network Exception: {e}")
-        raise RuntimeError(f"500 INTERNAL. {str(e)[:150]}")  # রিট্রাই মেকানিজমে ধরার জন্য ক্লিন এক্সেপশন থ্রো
+        raise RuntimeError(f"500 INTERNAL. {str(e)[:150]}")
 
 async def generate_chat_with_retry(update: Update or None, context: ContextTypes.DEFAULT_TYPE, user_message: str, context_reason: str = "NORMAL") -> tuple:
     max_retries = 3
-    delay = 2.0  # রিট্রাই চেষ্টার অন্তর্বর্তী সময় (সেকেন্ড)
+    delay = 3.0  # রিট্রাই চেষ্টার অন্তর্বর্তী সময় (সেকেন্ড)
     sent_msg = None
+    last_error_details = "Internal error encountered."
     
     for attempt in range(1, max_retries + 1):
         try:
-            # সিঙ্কোনাস এপিআই রিকোয়েস্ট কল
-            reply, reminder_data = generate_openrouter_chat(user_message, context_reason)
+            # যদি এটি ২য় বা ৩য় চেষ্টা হয়, তবে এপিআই কল করার আগেই ইউজারকে স্ক্রিনে স্ট্যাটাস দেখাবো
+            if attempt > 1 and update and sent_msg:
+                warn_text = (
+                    f"⚠️ নেটওয়ার্ক ড্রপ বা ইন্টারনাল সার্ভার এরর খাইছে ভাই!\n"
+                    f"• স্ট্যাটাস: Google Gemini API Offline (500/503)\n"
+                    f"• ট্র্যাকিং ডিটেইলস: {last_error_details}\n"
+                    f"জিতু ভাইয়া ব্যাকগ্রাউন্ডে সাইলেন্টলি ফেইল না করে তোকে এলার্ট জানিয়ে দিল। একটু পর আবার মেসেজ দে!\n"
+                    f"------------------------------------------\n"
+                    f"🔄 আবার চেষ্টা করা হচ্ছে (Attempt: {attempt}/{max_retries})..."
+                )
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=update.effective_chat.id,
+                        message_id=sent_msg.message_id,
+                        text=warn_text
+                    )
+                except Exception as edit_err:
+                    logging.warning(f"Failed to edit status before retry: {edit_err}")
+
+            # ⚡ নন-ব্লকিং ব্যাকগ্রাউন্ড থ্রেডে এপিআই রিকোয়েস্ট রান করা হলো (যাতে বট হ্যাং না হয়)
+            reply, reminder_data = await asyncio.to_thread(generate_openrouter_chat, user_message, context_reason)
             
-            # 🛡️ বুলেটের মতো ফেইলপ্রুফ ফিল্টার: যদি কোনো কারণে পুরানো জেনারেট ফাংশন রিপ্লেস না হয়ে থাকে,
-            # এবং সে এরর মেসেজ স্ট্রিং রিটার্ন করে, তবে জোরপূর্বক এক্সেপশন রেইজ করা হবে
+            # ফেইলপ্রুফ চেক
             if isinstance(reply, str) and "Offline (500/503)" in reply:
                 match_details = re.search(r"• ট্র্যাকিং ডিটেইলস:\s*(.*)", reply)
                 err_text = match_details.group(1).strip() if match_details else reply
@@ -561,7 +580,6 @@ async def generate_chat_with_retry(update: Update or None, context: ContextTypes
             
             if update:
                 if sent_msg:
-                    # রিট্রাইয়ের পর সফল হলে এরর মেসেজটি বদলে আসল রিপ্লাইটি বসবে
                     await context.bot.edit_message_text(
                         chat_id=update.effective_chat.id,
                         message_id=sent_msg.message_id,
@@ -570,45 +588,45 @@ async def generate_chat_with_retry(update: Update or None, context: ContextTypes
                 else:
                     await update.message.reply_text(final_text, reply_markup=get_remove_keyboard())
             else:
-                # ব্যাকগ্রাউন্ড নুজেস ট্র্রিগার
                 await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=final_text)
                 
             return reply, reminder_data
             
         except Exception as e:
-            # ট্র্যাকিং ডিটেইলস থেকে অপ্রয়োজনীয় RuntimeError প্রিফিক্স পরিষ্কার করা
             error_details = str(e).replace("RuntimeError:", "").strip()
             if not error_details:
                 error_details = "Internal error encountered."
             
-            error_details = error_details[:150]
+            last_error_details = error_details[:150]
             
             # চূড়ান্ত ব্যর্থতা (Attempt 3/3 ও ব্যর্থ হলে)
             if attempt == max_retries:
                 final_error_text = (
                     f"⚠️ নেটওয়ার্ক ড্রপ বা ইন্টারনাল সার্ভার এরর খাইছে ভাই!\n"
                     f"• স্ট্যাটাস: Google Gemini API Offline (500/503)\n"
-                    f"• ট্র্যাকিং ডিটেইলস: {error_details}\n"
+                    f"• ট্র্যাকিং ডিটেইলস: {last_error_details}\n"
                     f"জিতু ভাইয়া ৩ বার চেষ্টা করেও কানেক্ট করতে পারল না। গুগল এপিআই সাময়িকভাবে সম্পূর্ণ ডাউন আছে। একটু পর আবার মেসেজ দে!"
                 )
                 if update:
                     if sent_msg:
-                        await context.bot.edit_message_text(
-                            chat_id=update.effective_chat.id,
-                            message_id=sent_msg.message_id,
-                            text=final_error_text
-                        )
+                        try:
+                            await context.bot.edit_message_text(
+                                chat_id=update.effective_chat.id,
+                                message_id=sent_msg.message_id,
+                                text=final_error_text
+                            )
+                        except Exception: pass
                     else:
                         await update.message.reply_text(final_error_text, reply_markup=get_remove_keyboard())
                 else:
                     await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=final_error_text)
                 return "ERROR", None
             
-            # আপনার হুবহু এরর ফরম্যাট + রিট্রাই কাউন্টার জেনারেটর
+            # হুবহু এরর ফরম্যাট + রিট্রাই কাউন্টার জেনারেটর
             warn_text = (
                 f"⚠️ নেটওয়ার্ক ড্রপ বা ইন্টারনাল সার্ভার এরর খাইছে ভাই!\n"
                 f"• স্ট্যাটাস: Google Gemini API Offline (500/503)\n"
-                f"• ট্র্যাকিং ডিটেইলস: {error_details}\n"
+                f"• ট্র্যাকিং ডিটেইলস: {last_error_details}\n"
                 f"জিতু ভাইয়া ব্যাকগ্রাউন্ডে সাইলেন্টলি ফেইল না করে তোকে এলার্ট জানিয়ে দিল। একটু পর আবার মেসেজ দে!\n"
                 f"------------------------------------------\n"
                 f"Attempt: {attempt}/{max_retries}"
@@ -616,13 +634,19 @@ async def generate_chat_with_retry(update: Update or None, context: ContextTypes
             
             if update:
                 if not sent_msg:
-                    sent_msg = await update.message.reply_text(warn_text, reply_markup=get_remove_keyboard())
+                    try:
+                        sent_msg = await update.message.reply_text(warn_text, reply_markup=get_remove_keyboard())
+                    except Exception as send_err:
+                        logging.error(f"Failed to send initial warning: {send_err}")
                 else:
-                    await context.bot.edit_message_text(
-                        chat_id=update.effective_chat.id,
-                        message_id=sent_msg.message_id,
-                        text=warn_text
-                    )
+                    try:
+                        await context.bot.edit_message_text(
+                            chat_id=update.effective_chat.id,
+                            message_id=sent_msg.message_id,
+                            text=warn_text
+                        )
+                    except Exception as edit_err:
+                        logging.error(f"Failed to edit warning: {edit_err}")
             
             await asyncio.sleep(delay)
         
